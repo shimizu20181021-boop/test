@@ -1,0 +1,2 @@
+Another client is changing the serve config; please try again.
+sending serve config: Preconditions failed: etag mismatch

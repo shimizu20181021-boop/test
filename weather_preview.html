@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>天候エフェクト プレビュー</title>
+    <link rel="icon" href="data:," />
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: #f3f0e8;
+        color: rgba(0, 0, 0, 0.88);
+      }
+      .wrap {
+        max-width: 1200px;
+        margin: 18px auto;
+        padding: 0 14px 32px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 18px;
+      }
+      .note {
+        margin-top: 6px;
+        font-size: 12px;
+        color: rgba(0, 0, 0, 0.62);
+      }
+      .panel {
+        margin-top: 12px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 10px;
+      }
+      .controls {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .controls label {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        font-size: 13px;
+      }
+      .controls input,
+      .controls select,
+      .controls button {
+        font-size: 13px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        border: 1px solid rgba(0, 0, 0, 0.18);
+        background: white;
+      }
+      .controls button {
+        cursor: pointer;
+      }
+      .controls button:hover {
+        background: rgba(0, 0, 0, 0.04);
+      }
+      .canvasWrap {
+        margin-top: 12px;
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .canvasHeader {
+        padding: 10px 12px;
+        font-size: 12px;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: baseline;
+        color: rgba(0, 0, 0, 0.72);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+      }
+      canvas {
+        width: 100%;
+        height: auto;
+        display: block;
+        touch-action: none;
+        background: #d6d6d6;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>天候エフェクト プレビュー</h1>
+      <div class="note">雨（雨粒＋水たまり）、雪（雪片＋積雪）、日照り（湯気＋熱の霞み）を確認できます。</div>
+
+      <div class="panel">
+        <div class="controls">
+          <label>
+            天気
+            <select id="wpWeather">
+              <option value="sunny">晴れ</option>
+              <option value="cloudy">曇り</option>
+              <option value="rainy">雨</option>
+              <option value="snowy">雪</option>
+              <option value="drought">日照り</option>
+            </select>
+          </label>
+          <label>
+            ズーム
+            <input id="wpZoom" type="range" min="0.5" max="2.5" step="0.01" value="1.0" />
+            <span id="wpZoomVal" style="min-width: 3.8em; text-align: right">1.00</span>
+          </label>
+          <button id="wpResetFx" type="button" title="水たまり/積雪の蓄積をリセット">FXリセット</button>
+          <span style="opacity: 0.7">水たまり: <code id="wpWet">0%</code> / 積雪: <code id="wpSnow">0%</code></span>
+        </div>
+      </div>
+
+      <div class="canvasWrap">
+        <div class="canvasHeader">
+          <div>ドラッグで移動 / ホイールでズーム（または上のスライダー）</div>
+          <div style="opacity: 0.65">※ このページは動作確認用です（本体には影響しません）</div>
+        </div>
+        <canvas id="wpCanvas" width="960" height="540" aria-label="天候エフェクトプレビュー"></canvas>
+      </div>
+    </div>
+
+    <script type="module" src="./tools/weather_preview.js"></script>
+  </body>
+</html>
+

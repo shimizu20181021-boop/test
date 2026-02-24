@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Observation of Living Organisms</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
+    <div id="game-root">
+      <canvas id="game-canvas" aria-label="ミクロ世界"></canvas>
+
+      <div id="left-controls">
+        <button id="settings-open" type="button">設定</button>
+        <button id="settings-open-env" type="button" class="hidden">環境設定</button>
+        <button id="settings-open-life" type="button" class="hidden">生物・植物設定</button>
+        <button id="settings-open-learning" type="button" class="hidden">学習設定</button>
+        <button id="auto-observe" type="button" class="hidden" disabled>自動観察 OFF</button>
+        <div id="auto-observe-targets" class="hidden" aria-label="自動観察ターゲット">
+          <label><input type="radio" name="auto-observe-target" value="herbivore" checked />草食</label>
+          <label><input type="radio" name="auto-observe-target" value="omnivore" />雑食</label>
+          <label><input type="radio" name="auto-observe-target" value="carnivore" />肉食</label>
+        </div>
+      </div>
+      <div id="view-toggle" aria-label="視点切替">
+        <button id="view-micro" type="button" class="active">ミクロ視点</button>
+        <button id="view-macro" type="button">マクロ視点</button>
+      </div>
+
+      <div id="settings-modal" class="hidden" role="dialog" aria-modal="true" aria-label="設定メニュー">
+        <div id="settings-backdrop"></div>
+        <div id="settings-panel">
+          <h2 id="settings-title">設定</h2>
+
+          <div id="settings-section-micro">
+            <fieldset>
+              <legend>個体数</legend>
+              <label><input type="radio" name="population" value="many" />多い</label>
+              <label><input type="radio" name="population" value="normal" checked />普通</label>
+              <label><input type="radio" name="population" value="few" />少ない</label>
+            </fieldset>
+
+            <fieldset>
+              <legend>転生個体数</legend>
+              <div id="range-row">
+                <input id="reincarnation-count" type="range" min="5" max="100" step="1" value="15" />
+                <span id="reincarnation-count-value">15</span>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>クールタイム（合体失敗時）</legend>
+              <div id="range-row">
+                <input id="micro-merge-cooldown" type="range" min="1" max="30" step="1" value="10" />
+                <span id="micro-merge-cooldown-value">10秒</span>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>星の成長</legend>
+              <div id="range-row">
+                <span class="settings-range-label">星サイズ</span>
+                <input id="micro-star-scale" type="range" min="0.6" max="3.0" step="0.1" value="1.0" />
+                <span id="micro-star-scale-value">×1.0</span>
+              </div>
+              <div id="range-row">
+                <span class="settings-range-label">成長スピード</span>
+                <input id="micro-growth-speed" type="range" min="0.5" max="8.0" step="0.1" value="2.7" />
+                <span id="micro-growth-speed-value">2.7</span>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>合体演出</legend>
+              <div id="range-row">
+                <span class="settings-range-label">合体時間</span>
+                <input id="micro-merge-ritual" type="range" min="0.3" max="2.0" step="0.1" value="1.0" />
+                <span id="micro-merge-ritual-value">1.0秒</span>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>銀河化</legend>
+              <div id="range-row">
+                <span class="settings-range-label">強さ</span>
+                <input id="micro-galaxy-strength" type="range" min="0" max="1" step="0.05" value="0.85" />
+                <span id="micro-galaxy-strength-value">85%</span>
+              </div>
+              <div id="range-row">
+                <span class="settings-range-label">開始</span>
+                <input id="micro-galaxy-start" type="range" min="10" max="90" step="5" value="40" />
+                <span id="micro-galaxy-start-value">40%</span>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>表示</legend>
+              <label><input id="micro-debug" type="checkbox" />デバッグ表示（図形/数値）</label>
+            </fieldset>
+          </div>
+
+          <div id="settings-section-macro" class="hidden">
+            <div id="settings-macro-env">
+              <fieldset>
+                <legend>マップサイズ（変更するとリセット）</legend>
+                <label><input type="radio" name="macro-map-size" value="small" />小：60×60</label>
+                <label><input type="radio" name="macro-map-size" value="medium" />中：120×120</label>
+                <label><input type="radio" name="macro-map-size" value="large" checked />大：200×200</label>
+                <label><input type="radio" name="macro-map-size" value="giant" />巨大：400×400</label>
+              </fieldset>
+
+              <fieldset>
+                <legend>転生上限（生物+植物 / 群れ単位）</legend>
+                <div id="range-row">
+                  <input id="macro-animal-cap" type="range" min="10" max="100" step="1" value="30" />
+                  <span id="macro-animal-cap-value">30</span>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>上限個体数（種類別）</legend>
+                <div class="settings-cap-grid">
+                  <div class="settings-cap-row">
+                    <div class="settings-cap-label">植物</div>
+                    <label><input type="radio" name="macro-pop-cap-plant" value="300" />300</label>
+                    <label><input type="radio" name="macro-pop-cap-plant" value="500" checked />500</label>
+                    <label><input type="radio" name="macro-pop-cap-plant" value="800" />800</label>
+                    <label><input type="radio" name="macro-pop-cap-plant" value="1000" />1000</label>
+                  </div>
+                  <div class="settings-cap-row">
+                    <div class="settings-cap-label">草食</div>
+                    <label><input type="radio" name="macro-pop-cap-herb" value="300" />300</label>
+                    <label><input type="radio" name="macro-pop-cap-herb" value="500" checked />500</label>
+                    <label><input type="radio" name="macro-pop-cap-herb" value="800" />800</label>
+                    <label><input type="radio" name="macro-pop-cap-herb" value="1000" />1000</label>
+                  </div>
+                  <div class="settings-cap-row">
+                    <div class="settings-cap-label">雑食</div>
+                    <label><input type="radio" name="macro-pop-cap-omni" value="300" />300</label>
+                    <label><input type="radio" name="macro-pop-cap-omni" value="500" checked />500</label>
+                    <label><input type="radio" name="macro-pop-cap-omni" value="800" />800</label>
+                    <label><input type="radio" name="macro-pop-cap-omni" value="1000" />1000</label>
+                  </div>
+                  <div class="settings-cap-row">
+                    <div class="settings-cap-label">肉食</div>
+                    <label><input type="radio" name="macro-pop-cap-carn" value="300" />300</label>
+                    <label><input type="radio" name="macro-pop-cap-carn" value="500" checked />500</label>
+                    <label><input type="radio" name="macro-pop-cap-carn" value="800" />800</label>
+                    <label><input type="radio" name="macro-pop-cap-carn" value="1000" />1000</label>
+                  </div>
+                </div>
+                <div class="settings-note">※上限以上は増えません（既存の卵の孵化は止めません）</div>
+              </fieldset>
+
+              <fieldset>
+                <legend>肉の腐敗</legend>
+                <label><input type="radio" name="macro-meat-rot" value="on" checked />あり</label>
+                <label><input type="radio" name="macro-meat-rot" value="off" />なし</label>
+              </fieldset>
+            </div>
+
+            <div id="settings-macro-life" class="hidden">
+              <div class="settings-group-title">繁殖・群れ</div>
+              <fieldset>
+                <legend>集団グループ最大数</legend>
+                <label><input type="radio" name="macro-group-max-size" value="4" checked />4</label>
+                <label><input type="radio" name="macro-group-max-size" value="8" />8</label>
+                <label><input type="radio" name="macro-group-max-size" value="12" />12</label>
+              </fieldset>
+
+              <fieldset>
+                <legend>草食：カップル繁殖数</legend>
+                <label><input type="radio" name="macro-herb-repro-preset" value="few" />少ない</label>
+                <label><input type="radio" name="macro-herb-repro-preset" value="normal" checked />普通</label>
+                <label><input type="radio" name="macro-herb-repro-preset" value="many" />多い</label>
+              </fieldset>
+
+              <fieldset>
+                <legend>草食：出産数</legend>
+                <label><input type="radio" name="macro-herb-birth-preset" value="few" />少ない</label>
+                <label><input type="radio" name="macro-herb-birth-preset" value="normal" checked />普通</label>
+                <label><input type="radio" name="macro-herb-birth-preset" value="many" />多い</label>
+              </fieldset>
+
+              <fieldset>
+                <legend>雑食：カップル繁殖数</legend>
+                <label><input type="radio" name="macro-omni-repro-preset" value="few" />少ない</label>
+                <label><input type="radio" name="macro-omni-repro-preset" value="normal" checked />普通</label>
+                <label><input type="radio" name="macro-omni-repro-preset" value="many" />多い</label>
+              </fieldset>
+
+              <fieldset>
+                <legend>雑食：出産数</legend>
+                <label><input type="radio" name="macro-omni-birth-preset" value="few" />少ない</label>
+                <label><input type="radio" name="macro-omni-birth-preset" value="normal" checked />普通</label>
+                <label><input type="radio" name="macro-omni-birth-preset" value="many" />多い</label>
+              </fieldset>
+
+              <fieldset>
+                <legend>肉食：カップル繁殖数</legend>
+                <label><input type="radio" name="macro-carn-repro-preset" value="few" />少ない</label>
+                <label><input type="radio" name="macro-carn-repro-preset" value="normal" checked />普通</label>
+                <label><input type="radio" name="macro-carn-repro-preset" value="many" />多い</label>
+              </fieldset>
+
+              <fieldset>
+                <legend>肉食：出産数</legend>
+                <label><input type="radio" name="macro-carn-birth-preset" value="few" />少ない</label>
+                <label><input type="radio" name="macro-carn-birth-preset" value="normal" checked />普通</label>
+                <label><input type="radio" name="macro-carn-birth-preset" value="many" />多い</label>
+              </fieldset>
+
+              <fieldset>
+                <legend>植物の繁殖回数（最大）</legend>
+                <div id="range-row">
+                  <input id="macro-plant-repro-max" type="range" min="1" max="5" step="1" value="2" />
+                  <span id="macro-plant-repro-max-value">2</span>
+                </div>
+              </fieldset>
+
+              <div class="settings-group-title">回復</div>
+              <fieldset>
+                <legend>肉の空腹回復（%/個）</legend>
+                <div id="range-row">
+                  <input id="macro-meat-hunger-recover" type="range" min="5" max="100" step="1" value="40" />
+                  <span id="macro-meat-hunger-recover-value">40%</span>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>植物の空腹回復（倍率）</legend>
+                <div id="range-row">
+                  <input
+                    id="macro-plant-hunger-recover-mul"
+                    type="range"
+                    min="0.2"
+                    max="3.0"
+                    step="0.1"
+                    value="1.5"
+                  />
+                  <span id="macro-plant-hunger-recover-mul-value">×1.5</span>
+                </div>
+              </fieldset>
+
+              <div class="settings-group-title">植物</div>
+              <fieldset>
+                <legend>植物：スタミナ（耐久）倍率</legend>
+                <div id="range-row">
+                  <input id="macro-plant-stamina-mul" type="range" min="0.5" max="3.0" step="0.1" value="1.0" />
+                  <span id="macro-plant-stamina-mul-value">×1.0</span>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>植物：寿命（分 / 0=なし）</legend>
+                <div id="range-row">
+                  <input id="macro-plant-life-minutes" type="range" min="0" max="30" step="1" value="0" />
+                  <span id="macro-plant-life-minutes-value">なし</span>
+                </div>
+              </fieldset>
+
+              <div class="settings-group-title">草食</div>
+              <fieldset>
+                <legend>草食：スタミナ倍率</legend>
+                <div id="range-row">
+                  <input id="macro-herb-stamina-mul" type="range" min="0.5" max="3.0" step="0.1" value="1.0" />
+                  <span id="macro-herb-stamina-mul-value">×1.0</span>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>草食：寿命（分）</legend>
+                <div id="range-row">
+                  <input id="macro-herb-life-minutes" type="range" min="1" max="30" step="1" value="5" />
+                  <span id="macro-herb-life-minutes-value">5分</span>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>草食：腹減り速度（空腹減少）</legend>
+                <div id="range-row">
+                  <input
+                    id="macro-herb-hunger-decay-mul"
+                    type="range"
+                    min="0.1"
+                    max="3.0"
+                    step="0.1"
+                    value="1.0"
+                  />
+                  <span id="macro-herb-hunger-decay-mul-value">×1.0</span>
+                </div>
+              </fieldset>
+
+              <div class="settings-group-title">雑食</div>
+              <fieldset>
+                <legend>雑食：スタミナ倍率</legend>
+                <div id="range-row">
+                  <input id="macro-omni-stamina-mul" type="range" min="0.5" max="3.0" step="0.1" value="1.0" />
+                  <span id="macro-omni-stamina-mul-value">×1.0</span>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>雑食：寿命（分）</legend>
+                <div id="range-row">
+                  <input id="macro-omni-life-minutes" type="range" min="1" max="30" step="1" value="5" />
+                  <span id="macro-omni-life-minutes-value">5分</span>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>雑食：腹減り速度（空腹減少）</legend>
+                <div id="range-row">
+                  <input
+                    id="macro-omni-hunger-decay-mul"
+                    type="range"
+                    min="0.1"
+                    max="3.0"
+                    step="0.1"
+                    value="1.0"
+                  />
+                  <span id="macro-omni-hunger-decay-mul-value">×1.0</span>
+                </div>
+              </fieldset>
+
+              <div class="settings-group-title">肉食</div>
+              <fieldset>
+                <legend>肉食：スタミナ倍率</legend>
+                <div id="range-row">
+                  <input id="macro-carn-stamina-mul" type="range" min="0.5" max="3.0" step="0.1" value="1.0" />
+                  <span id="macro-carn-stamina-mul-value">×1.0</span>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>肉食：寿命（分）</legend>
+                <div id="range-row">
+                  <input id="macro-carn-life-minutes" type="range" min="1" max="30" step="1" value="5" />
+                  <span id="macro-carn-life-minutes-value">5分</span>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>肉食：腹減り速度（空腹減少）</legend>
+                <div id="range-row">
+                  <input
+                    id="macro-carn-hunger-decay-mul"
+                    type="range"
+                    min="0.1"
+                    max="3.0"
+                    step="0.1"
+                    value="1.0"
+                  />
+                  <span id="macro-carn-hunger-decay-mul-value">×1.0</span>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>肉食：攻撃倍率</legend>
+                <div id="range-row">
+                  <input id="macro-carn-attack-mul" type="range" min="1.0" max="5.0" step="0.1" value="2.0" />
+                  <span id="macro-carn-attack-mul-value">×2.0</span>
+                </div>
+              </fieldset>
+            </div>
+
+            <div id="settings-macro-learning" class="hidden">
+              <fieldset>
+                <legend>進化モード</legend>
+                <label><input type="radio" name="evolution-mode" value="natural" checked />自然淘汰型</label>
+                <label><input type="radio" name="evolution-mode" value="ga" />GA選別型</label>
+                <label><input type="radio" name="evolution-mode" value="both" />自然淘汰型・GA選別型</label>
+              </fieldset>
+
+              <fieldset id="fitness-weight-fieldset">
+                <legend>適応度（繁殖の重視度）</legend>
+                <label><input type="radio" name="fitness-weight" value="low" />低</label>
+                <label><input type="radio" name="fitness-weight" value="medium" checked />中</label>
+                <label><input type="radio" name="fitness-weight" value="high" />高</label>
+                <div class="settings-note">※GA選別型/自然淘汰型・GA選別型のときに有効</div>
+              </fieldset>
+
+              <fieldset>
+                <legend>NN可視化：点滅</legend>
+                <label
+                  ><input type="radio" name="macro-nn-viz-blink" value="always" />常時（活性の強さで点滅）</label
+                >
+                <label
+                  ><input type="radio" name="macro-nn-viz-blink" value="flash" checked />学習更新時のみフラッシュ</label
+                >
+              </fieldset>
+
+              <fieldset>
+                <legend>NN可視化：出力表示</legend>
+                <label
+                  ><input type="radio" name="macro-nn-viz-outputs" value="compact" checked />3択＋速度/危険回避/決定維持/温度指向</label
+                >
+                <label><input type="radio" name="macro-nn-viz-outputs" value="full" />全モード＋速度/危険回避/決定維持/温度指向</label>
+              </fieldset>
+            </div>
+          </div>
+
+          <button id="settings-apply" type="button">確定</button>
+        </div>
+      </div>
+
+      <div id="hud" aria-label="ステータス">
+        <div id="hud-left">
+          <div id="macro-timer" class="hidden" aria-label="タイマー">
+            <span id="macro-timer-text">00:00:00</span>
+          </div>
+          <div id="weather-indicator" class="hidden" aria-label="天気">
+            <span id="weather-icon" aria-hidden="true">☀️</span>
+            <span id="weather-text">晴れ</span>
+          </div>
+          <div id="hud-line-1"></div>
+          <div id="hud-line-2"></div>
+        </div>
+        <div id="hud-right">
+          <div id="calendar-indicator" class="hidden" aria-label="季節・日付・外気温">
+            <span id="season-icon" aria-hidden="true">🌸</span>
+            <span id="calendar-text">年1 春 1日目</span>
+            <span id="ambient-temp-text">外気 0℃</span>
+          </div>
+          <div id="inspect-panel" aria-label="生物詳細">
+            <div id="inspect-title">生物詳細（ホバー）</div>
+            <div id="inspect-content">マクロ視点で生物にマウスを合わせると表示します</div>
+          </div>
+          <div id="reincarnation-log"></div>
+          <div id="nn-viz-inline" class="hidden" aria-label="NN可視化">
+            <div id="nn-viz-inline-title">NN可視化</div>
+            <div id="nn-viz-inline-body"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

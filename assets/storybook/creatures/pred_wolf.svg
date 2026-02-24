@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Storybook predator (side view). Ground line is y=112. -->
+  <style>
+    .outline { stroke: var(--outline, #1f140b); stroke-width: 5.6; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+    .outlineThin { stroke: var(--outline, #1f140b); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+    .coat1 { fill: var(--coat1, #caa06a); }
+    .coat2 { fill: var(--coat2, #9b6a3a); }
+    .coat3 { fill: var(--coat3, #6b3b1a); }
+    .muzzle { fill: var(--muzzle, #e7caa2); }
+    .spot { fill: var(--spot, #5b2b2b); opacity: 0.28; }
+    .eye { fill: var(--eye, #120c07); }
+    .shine { fill: rgba(255,255,255,0.86); }
+    .detail { fill: none; stroke: var(--outline, #1f140b); stroke-width: 3.0; opacity: 0.32; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+    .fur { fill: none; stroke: var(--spot, #5b2b2b); stroke-width: 4.0; opacity: 0.16; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+    .nose { fill: var(--outline, #1f140b); opacity: 0.8; }
+  </style>
+
+  <defs>
+    <linearGradient id="gBody" gradientUnits="userSpaceOnUse" x1="28" y1="56" x2="118" y2="112">
+      <stop offset="0" stop-color="var(--coat1, #caa06a)" />
+      <stop offset="0.75" stop-color="var(--coat2, #9b6a3a)" />
+      <stop offset="1" stop-color="var(--coat3, #6b3b1a)" />
+    </linearGradient>
+  </defs>
+
+  <g id="wolf_body">
+    <path class="outline" fill="url(#gBody)" d="M30 86 C32 60 52 48 82 50 C110 52 122 68 118 92 C114 108 94 112 66 112 C42 112 28 104 30 86 Z" />
+    <path class="spot" d="M72 62 C84 58 98 62 96 74 C94 86 80 90 70 84 C60 78 60 66 72 62 Z" />
+    <path class="fur" d="M42 78 Q58 62 78 64 Q96 66 110 78" />
+    <path class="fur" d="M48 90 Q62 78 78 82 Q92 86 104 94" opacity="0.65" />
+    <path class="detail" d="M56 92 Q72 102 88 92" />
+  </g>
+
+  <g id="wolf_tail">
+    <path class="outline coat2" d="M110 84 Q124 90 118 104 Q112 114 98 108" />
+    <path class="outline coat3" d="M100 106 Q112 116 96 112 Q88 110 92 102 Q96 98 100 106 Z" />
+    <path class="detail" d="M108 90 Q116 96 112 104" />
+  </g>
+
+  <g id="wolf_legs">
+    <g opacity="0.62">
+      <path class="outline coat2" d="M56 88 Q58 86 60 88 V110 Q58 112 56 110 Z" />
+      <path class="outline coat2" d="M90 90 Q92 88 94 90 V110 Q92 112 90 110 Z" />
+      <path class="outline coat3" d="M54 109 H62 V112 H54 Z" />
+      <path class="outline coat3" d="M88 109 H96 V112 H88 Z" />
+    </g>
+    <path class="outline coat2" d="M62 88 Q64 86 66 88 V110 Q64 112 62 110 Z" />
+    <path class="outline coat2" d="M96 90 Q98 88 100 90 V110 Q98 112 96 110 Z" />
+    <path class="outline coat3" d="M60 109 H68 V112 H60 Z" />
+    <path class="outline coat3" d="M94 109 H102 V112 H94 Z" />
+  </g>
+
+  <g id="wolf_neck">
+    <path class="outline coat1" d="M46 64 Q34 70 34 84 Q40 90 46 86 Q48 74 58 68 Z" />
+    <path class="detail" d="M42 74 Q40 80 44 84" />
+    <path class="fur" d="M38 86 Q42 92 48 88" />
+  </g>
+
+  <g id="wolf_head_common">
+    <!-- ears -->
+    <path class="outline coat2" d="M28 54 L22 40 Q34 36 36 52 Z" />
+    <path class="outline coat2" d="M38 54 L40 38 Q52 42 46 58 Z" />
+    <!-- head -->
+    <path class="outline coat1" d="M18 76 C16 60 28 52 42 56 C56 60 58 74 52 86 C46 98 32 100 24 94 C18 90 20 84 18 76 Z" />
+    <!-- muzzle / snout -->
+    <path class="outline muzzle" d="M2 82 C2 70 14 64 28 64 C44 64 54 70 54 82 C54 94 42 100 28 98 C14 96 2 92 2 82 Z" />
+    <circle class="nose" cx="10" cy="82" r="2.2" />
+    <circle class="eye" cx="40" cy="72" r="2.9" />
+    <circle class="shine" cx="39" cy="71" r="1.1" />
+    <circle class="eye" cx="18" cy="84" r="1.2" opacity="0.55" />
+    <circle class="eye" cx="22" cy="84" r="1.2" opacity="0.55" />
+    <path class="detail" d="M18 92 Q24 94 30 90" />
+    <path class="detail" d="M12 88 Q16 90 20 88" opacity="0.75" />
+    <path class="detail" d="M30 64 Q34 60 40 62" opacity="0.85" />
+  </g>
+
+  <g id="wolf_brow_male">
+    <path class="outlineThin" fill="none" opacity="0.85" d="M34 66 Q40 60 46 66" />
+  </g>
+
+  <g id="wolf_lash_female">
+    <path class="outlineThin" fill="none" opacity="0.62" d="M34 66 Q40 62 46 66" />
+    <path class="outlineThin" fill="none" opacity="0.55" d="M44 66 Q48 62 52 66" />
+  </g>
+
+  <!-- stage groups -->
+  <g id="male_adult">
+    <use href="#wolf_tail" />
+    <use href="#wolf_body" />
+    <use href="#wolf_legs" />
+    <use href="#wolf_neck" />
+    <use href="#wolf_head_common" />
+    <use href="#wolf_brow_male" />
+  </g>
+  <g id="male_young" style="display:none">
+    <g transform="translate(78 86) scale(0.98) translate(-78 -86)"><use href="#wolf_body" /></g>
+    <g transform="translate(0 112) scale(1 0.93) translate(0 -112)"><use href="#wolf_legs" /></g>
+    <use href="#wolf_tail" />
+    <g transform="translate(38 76) scale(1.06) translate(-38 -76)">
+      <use href="#wolf_neck" />
+      <use href="#wolf_head_common" />
+    </g>
+    <use href="#wolf_brow_male" />
+  </g>
+  <g id="male_child" style="display:none">
+    <g transform="translate(78 88) scale(0.96) translate(-78 -88)"><use href="#wolf_body" /></g>
+    <g transform="translate(0 112) scale(1 0.86) translate(0 -112)"><use href="#wolf_legs" /></g>
+    <use href="#wolf_tail" opacity="0.9" />
+    <g transform="translate(38 76) scale(1.12) translate(-38 -76)">
+      <use href="#wolf_neck" />
+      <use href="#wolf_head_common" />
+    </g>
+    <use href="#wolf_brow_male" opacity="0.85" />
+  </g>
+  <g id="male_baby" style="display:none">
+    <g transform="translate(78 90) scale(0.92) translate(-78 -90)"><use href="#wolf_body" /></g>
+    <g transform="translate(0 112) scale(1 0.76) translate(0 -112)"><use href="#wolf_legs" /></g>
+    <use href="#wolf_tail" opacity="0.85" />
+    <g transform="translate(38 76) scale(1.18) translate(-38 -76)">
+      <use href="#wolf_neck" />
+      <use href="#wolf_head_common" />
+    </g>
+    <use href="#wolf_brow_male" opacity="0.7" />
+    <circle class="spot" cx="34" cy="96" r="3.4" opacity="0.22" />
+  </g>
+
+  <g id="female_adult" style="display:none">
+    <use href="#wolf_tail" />
+    <use href="#wolf_body" />
+    <use href="#wolf_legs" />
+    <use href="#wolf_neck" />
+    <use href="#wolf_head_common" />
+    <use href="#wolf_lash_female" />
+  </g>
+  <g id="female_young" style="display:none">
+    <g transform="translate(78 86) scale(0.98) translate(-78 -86)"><use href="#wolf_body" /></g>
+    <g transform="translate(0 112) scale(1 0.93) translate(0 -112)"><use href="#wolf_legs" /></g>
+    <use href="#wolf_tail" />
+    <g transform="translate(38 76) scale(1.06) translate(-38 -76)">
+      <use href="#wolf_neck" />
+      <use href="#wolf_head_common" />
+    </g>
+    <use href="#wolf_lash_female" />
+  </g>
+  <g id="female_child" style="display:none">
+    <g transform="translate(78 88) scale(0.96) translate(-78 -88)"><use href="#wolf_body" /></g>
+    <g transform="translate(0 112) scale(1 0.86) translate(0 -112)"><use href="#wolf_legs" /></g>
+    <use href="#wolf_tail" opacity="0.9" />
+    <g transform="translate(38 76) scale(1.12) translate(-38 -76)">
+      <use href="#wolf_neck" />
+      <use href="#wolf_head_common" />
+    </g>
+    <use href="#wolf_lash_female" />
+  </g>
+  <g id="female_baby" style="display:none">
+    <g transform="translate(78 90) scale(0.92) translate(-78 -90)"><use href="#wolf_body" /></g>
+    <g transform="translate(0 112) scale(1 0.76) translate(0 -112)"><use href="#wolf_legs" /></g>
+    <use href="#wolf_tail" opacity="0.85" />
+    <g transform="translate(38 76) scale(1.18) translate(-38 -76)">
+      <use href="#wolf_neck" />
+      <use href="#wolf_head_common" />
+    </g>
+    <use href="#wolf_lash_female" />
+    <circle class="spot" cx="34" cy="96" r="3.4" opacity="0.22" />
+  </g>
+</svg>

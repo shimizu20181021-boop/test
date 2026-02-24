@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>絵本風 生物プレビュー</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      body {
+        background: #f3f0e8;
+      }
+      .sbWrap {
+        max-width: 1200px;
+        margin: 18px auto;
+        padding: 0 14px 24px;
+      }
+      .sbHeader {
+        display: flex;
+        gap: 12px;
+        align-items: baseline;
+        flex-wrap: wrap;
+      }
+      .sbHeader h1 {
+        font-size: 18px;
+        margin: 0;
+      }
+      .sbHeader .note {
+        color: rgba(0, 0, 0, 0.62);
+        font-size: 12px;
+      }
+      .sbControls {
+        margin-top: 12px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.85);
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 10px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .sbControls label {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        font-size: 13px;
+      }
+      .sbControls select,
+      .sbControls button {
+        font-size: 13px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        border: 1px solid rgba(0, 0, 0, 0.18);
+        background: white;
+      }
+      .sbControls input[type="range"] {
+        width: 160px;
+      }
+      .sbControls input[type="checkbox"] {
+        transform: translateY(1px);
+      }
+      .sbControls button {
+        cursor: pointer;
+      }
+      .sbGrid {
+        margin-top: 14px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 12px;
+      }
+      .sbCard {
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 12px;
+        overflow: hidden;
+        cursor: pointer;
+      }
+      .sbCard.isSelected {
+        outline: 3px solid rgba(59, 130, 246, 0.9);
+        box-shadow: 0 8px 18px rgba(59, 130, 246, 0.14);
+      }
+      .sbCardHeader {
+        padding: 10px 12px;
+        font-size: 12px;
+        color: rgba(0, 0, 0, 0.75);
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .sbCardCanvas {
+        background: linear-gradient(180deg, #fbf6e9 0%, #f5e7c7 60%, #f0dba8 100%);
+        border-top: 1px solid rgba(0, 0, 0, 0.08);
+        padding: 10px;
+      }
+      .sbCanvasWrap {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        border-radius: 10px;
+        overflow: hidden;
+        display: block;
+        position: relative;
+      }
+      .sbCanvasWrap canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .sbCanvasWrap canvas.sbOverlayCanvas {
+        pointer-events: none;
+      }
+
+      .sbSim {
+        margin-top: 14px;
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .sbSimHeader {
+        padding: 10px 12px;
+        font-size: 12px;
+        color: rgba(0, 0, 0, 0.75);
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: baseline;
+      }
+      .sbSimCanvas {
+        background: linear-gradient(180deg, #fbf6e9 0%, #f5e7c7 60%, #f0dba8 100%);
+        border-top: 1px solid rgba(0, 0, 0, 0.08);
+        padding: 10px;
+      }
+      .sbSimCanvasWrap {
+        width: 100%;
+        /* 俯瞰（トップダウン）で見やすい比率 */
+        aspect-ratio: 16 / 9;
+        border-radius: 10px;
+        overflow: hidden;
+        display: block;
+      }
+      .sbSimCanvasWrap canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .sbSimControls {
+        margin-top: 10px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .sbSimControls button {
+        font-size: 13px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        border: 1px solid rgba(0, 0, 0, 0.18);
+        background: white;
+        cursor: pointer;
+      }
+      .sbSimStatus {
+        margin-left: auto;
+        font-size: 12px;
+        color: rgba(0, 0, 0, 0.72);
+      }
+
+      .sbAssetGrid {
+        margin-top: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 12px;
+      }
+      .sbAssetGrid .sbCard {
+        cursor: default;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sbWrap">
+      <div class="sbHeader">
+        <h1>絵本風 生物プレビュー（横向き）</h1>
+        <div class="note">※ ここは「完成イメージ確認用」のみ（ゲーム本体には未反映）</div>
+      </div>
+
+      <div class="sbControls">
+        <label>
+          性別
+          <select id="sbSex">
+            <option value="male">雄</option>
+            <option value="female">雌</option>
+          </select>
+        </label>
+        <label>
+          成長段階
+          <select id="sbStage">
+            <option value="baby">赤ちゃん</option>
+            <option value="child">子供</option>
+            <option value="young">若大人</option>
+            <option value="adult" selected>大人</option>
+          </select>
+        </label>
+        <button id="sbRandomize">配色ランダム</button>
+        <button id="sbReset">配色リセット</button>
+        <label style="gap: 10px">
+          ズーム
+          <input id="sbZoom" type="range" min="0.35" max="3.0" step="0.01" value="1.0" />
+          <span id="sbZoomVal" style="min-width: 3.4em; text-align: right">1.00</span>
+        </label>
+        <label>
+          ツノ
+          <select id="sbHorn">
+            <option value="0" selected>なし</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+          </select>
+        </label>
+        <label>
+          羽
+          <select id="sbWing">
+            <option value="0" selected>なし</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+          </select>
+        </label>
+        <label>
+          植物
+          <select id="sbPlant">
+            <option value="random" selected>ランダム</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+            <option value="11">11</option>
+            <option value="12">12</option>
+            <option value="13">13</option>
+            <option value="14">14</option>
+            <option value="15">15</option>
+          </select>
+        </label>
+        <label title="素材（ツノ/羽/植物）の背景が透過ではない場合、白・薄い灰色を簡易的に消します。">
+          <input id="sbKeyBg" type="checkbox" checked />
+          背景抜き（簡易）
+        </label>
+      </div>
+
+      <div id="sbGrid" class="sbGrid">
+        <div class="sbCard" style="grid-column: 1 / -1">
+          <div class="sbCardHeader">
+            <div>表示されない場合</div>
+          </div>
+          <div class="sbCardCanvas">
+            <div style="font-size: 12px; line-height: 1.7; color: rgba(0, 0, 0, 0.78)">
+              読み込み中です。何も表示されない場合は、このHTMLを <b>ローカルサーバー</b>（例：VS Code Live Server）で開いてください。<br />
+              例：VS Code で <code>storybook_preview.html</code> を右クリック → <b>Open with Live Server</b><br />
+              もしくはゲームを Live Server で開いている場合、URL の末尾を <code>storybook_preview.html</code> に変更してください。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sbSim" id="sbAssets">
+        <div class="sbSimHeader">
+          <div>
+            <b>素材プレビュー</b>
+            <span class="note">（ツノ / 羽 / 植物）</span>
+          </div>
+          <div class="note">※ 素材は <code>assets/sample</code> を参照します</div>
+        </div>
+        <div class="sbSimCanvas">
+          <div id="sbAssetsGrid" class="sbAssetGrid"></div>
+        </div>
+      </div>
+
+      <div class="sbSim" id="sbSim">
+        <div class="sbSimHeader">
+          <div>
+            <b>簡易動作確認</b>
+            <span id="sbSimSelected" style="opacity: 0.72">（カードをクリックして選択）</span>
+          </div>
+          <div class="note">下のエリア：クリックでごはん設置 / ホイールでズーム</div>
+        </div>
+        <div class="sbSimCanvas">
+          <div class="sbSimCanvasWrap">
+            <canvas id="sbSimCanvas" aria-label="簡易動作確認"></canvas>
+          </div>
+          <div class="sbSimControls">
+            <button id="sbSimSpawnFood">ごはんを置く</button>
+            <button id="sbSimHungry">空腹にする</button>
+            <button id="sbSimReset">リセット</button>
+            <div id="sbSimStatus" class="sbSimStatus"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script defer src="./tools/storybook_preview.js"></script>
+  </body>
+</html>

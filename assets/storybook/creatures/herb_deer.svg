@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Storybook creature (side view). Ground line is y=112. -->
+  <style>
+    .outline { stroke: var(--outline, #2b1b0f); stroke-width: 5.6; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+    .outlineThin { stroke: var(--outline, #2b1b0f); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+    .coat1 { fill: var(--coat1, #f2cf77); }
+    .coat2 { fill: var(--coat2, #d8a85f); }
+    .coat3 { fill: var(--coat3, #b6803a); }
+    .muzzle { fill: var(--muzzle, #f2d1a0); }
+    .spot { fill: var(--spot, #c48b45); opacity: 0.38; }
+    .eye { fill: var(--eye, #19110a); }
+    .shine { fill: rgba(255,255,255,0.86); }
+    .detail { fill: none; stroke: var(--outline, #2b1b0f); stroke-width: 3.0; opacity: 0.28; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  </style>
+
+  <defs>
+    <linearGradient id="gBody" gradientUnits="userSpaceOnUse" x1="30" y1="56" x2="114" y2="114">
+      <stop offset="0" stop-color="var(--coat1, #f2cf77)" />
+      <stop offset="0.7" stop-color="var(--coat2, #d8a85f)" />
+      <stop offset="1" stop-color="var(--coat3, #b6803a)" />
+    </linearGradient>
+  </defs>
+
+  <g id="deer_body">
+    <path class="outline" fill="url(#gBody)" d="M32 82 C34 62 54 52 76 54 C98 56 114 68 114 86 C114 104 96 112 76 112 C52 112 30 104 32 82 Z" />
+    <!-- chest -->
+    <path class="outline coat2" d="M38 80 Q34 64 44 56 Q52 52 58 54 Q48 62 50 84 Z" opacity="0.55" />
+    <path class="spot" d="M66 64 C76 60 90 64 88 74 C86 84 74 88 64 84 C54 80 56 68 66 64 Z" />
+    <circle class="spot" cx="88" cy="70" r="3.1" />
+    <circle class="spot" cx="96" cy="78" r="2.6" />
+    <circle class="spot" cx="82" cy="80" r="2.4" />
+    <path class="detail" d="M58 92 Q74 102 90 92" />
+  </g>
+
+  <g id="deer_tail">
+    <path class="outlineThin coat2" d="M112 84 Q122 86 116 94" />
+    <path class="outlineThin coat3" d="M116 94 Q120 100 112 104 Q118 100 116 94 Z" />
+  </g>
+
+  <g id="deer_legs">
+    <!-- far legs -->
+    <g opacity="0.62">
+      <path class="outline coat2" d="M56 84 Q58 82 60 84 V110 Q58 112 56 110 Z" />
+      <path class="outline coat2" d="M92 86 Q94 84 96 86 V110 Q94 112 92 110 Z" />
+      <path class="outline coat3" d="M54 109 H62 V112 H54 Z" />
+      <path class="outline coat3" d="M90 109 H98 V112 H90 Z" />
+    </g>
+    <!-- near legs -->
+    <path class="outline coat2" d="M62 84 Q64 82 66 84 V110 Q64 112 62 110 Z" />
+    <path class="outline coat2" d="M98 86 Q100 84 102 86 V110 Q100 112 98 110 Z" />
+    <path class="outline coat3" d="M60 109 H68 V112 H60 Z" />
+    <path class="outline coat3" d="M96 109 H104 V112 H96 Z" />
+  </g>
+
+  <g id="deer_neck">
+    <path class="outline coat1" d="M44 62 Q34 70 34 82 Q38 88 44 84 Q46 74 54 68 Z" />
+    <path class="detail" d="M42 74 Q40 78 42 82" />
+  </g>
+
+  <g id="deer_head_common">
+    <!-- ears -->
+    <path class="outline coat2" d="M28 52 Q22 40 30 36 Q38 44 34 56 Z" />
+    <path class="outline coat2" d="M38 52 Q36 40 46 38 Q52 48 42 58 Z" />
+    <!-- head -->
+    <path class="outline coat1" d="M20 74 C18 60 28 54 40 56 C52 58 58 68 56 80 C54 92 44 98 34 96 C26 94 22 86 20 74 Z" />
+    <!-- muzzle -->
+    <path class="outline muzzle" d="M8 78 C8 70 14 66 22 66 C30 66 36 70 36 78 C36 86 30 90 22 90 C14 90 8 86 8 78 Z" />
+    <circle class="eye" cx="40" cy="72" r="3.0" />
+    <circle class="shine" cx="39" cy="71" r="1.2" />
+    <circle class="eye" cx="18" cy="80" r="1.1" opacity="0.55" />
+    <circle class="eye" cx="22" cy="80" r="1.1" opacity="0.55" />
+    <path class="detail" d="M18 88 Q22 90 26 88" />
+  </g>
+
+  <g id="deer_antlers_male">
+    <path class="outlineThin coat3" d="M34 56 Q30 44 24 46" />
+    <path class="outlineThin coat3" d="M32 50 Q28 48 26 44" />
+    <path class="outlineThin coat3" d="M44 56 Q48 44 54 46" />
+    <path class="outlineThin coat3" d="M46 50 Q50 48 52 44" />
+  </g>
+
+  <g id="deer_eyes_female">
+    <path class="outlineThin" fill="none" opacity="0.62" d="M36 68 Q40 64 44 68" />
+    <path class="outlineThin" fill="none" opacity="0.62" d="M44 68 Q48 64 52 68" />
+  </g>
+
+  <!-- stage groups -->
+  <g id="male_adult">
+    <use href="#deer_tail" />
+    <use href="#deer_body" />
+    <use href="#deer_legs" />
+    <use href="#deer_neck" />
+    <use href="#deer_head_common" />
+    <use href="#deer_antlers_male" />
+  </g>
+  <g id="male_young" style="display:none">
+    <g transform="translate(76 84) scale(0.98) translate(-76 -84)"><use href="#deer_body" /></g>
+    <g transform="translate(0 112) scale(1 0.93) translate(0 -112)"><use href="#deer_legs" /></g>
+    <use href="#deer_tail" />
+    <g transform="translate(38 74) scale(1.05) translate(-38 -74)">
+      <use href="#deer_neck" />
+      <use href="#deer_head_common" />
+    </g>
+    <use href="#deer_antlers_male" />
+  </g>
+  <g id="male_child" style="display:none">
+    <g transform="translate(76 86) scale(0.96) translate(-76 -86)"><use href="#deer_body" /></g>
+    <g transform="translate(0 112) scale(1 0.86) translate(0 -112)"><use href="#deer_legs" /></g>
+    <use href="#deer_tail" opacity="0.9" />
+    <g transform="translate(38 74) scale(1.12) translate(-38 -74)">
+      <use href="#deer_neck" />
+      <use href="#deer_head_common" />
+    </g>
+    <use href="#deer_antlers_male" opacity="0.55" />
+  </g>
+  <g id="male_baby" style="display:none">
+    <g transform="translate(76 88) scale(0.92) translate(-76 -88)"><use href="#deer_body" /></g>
+    <g transform="translate(0 112) scale(1 0.76) translate(0 -112)"><use href="#deer_legs" /></g>
+    <use href="#deer_tail" opacity="0.85" />
+    <g transform="translate(38 74) scale(1.18) translate(-38 -74)">
+      <use href="#deer_neck" />
+      <use href="#deer_head_common" />
+    </g>
+    <use href="#deer_antlers_male" opacity="0.28" />
+    <circle class="spot" cx="34" cy="92" r="3.4" opacity="0.24" />
+  </g>
+
+  <g id="female_adult" style="display:none">
+    <use href="#deer_tail" />
+    <use href="#deer_body" />
+    <use href="#deer_legs" />
+    <use href="#deer_neck" />
+    <use href="#deer_head_common" />
+    <use href="#deer_eyes_female" />
+  </g>
+  <g id="female_young" style="display:none">
+    <g transform="translate(76 84) scale(0.98) translate(-76 -84)"><use href="#deer_body" /></g>
+    <g transform="translate(0 112) scale(1 0.93) translate(0 -112)"><use href="#deer_legs" /></g>
+    <use href="#deer_tail" />
+    <g transform="translate(38 74) scale(1.05) translate(-38 -74)">
+      <use href="#deer_neck" />
+      <use href="#deer_head_common" />
+    </g>
+    <use href="#deer_eyes_female" />
+  </g>
+  <g id="female_child" style="display:none">
+    <g transform="translate(76 86) scale(0.96) translate(-76 -86)"><use href="#deer_body" /></g>
+    <g transform="translate(0 112) scale(1 0.86) translate(0 -112)"><use href="#deer_legs" /></g>
+    <use href="#deer_tail" opacity="0.9" />
+    <g transform="translate(38 74) scale(1.12) translate(-38 -74)">
+      <use href="#deer_neck" />
+      <use href="#deer_head_common" />
+    </g>
+    <use href="#deer_eyes_female" />
+  </g>
+  <g id="female_baby" style="display:none">
+    <g transform="translate(76 88) scale(0.92) translate(-76 -88)"><use href="#deer_body" /></g>
+    <g transform="translate(0 112) scale(1 0.76) translate(0 -112)"><use href="#deer_legs" /></g>
+    <use href="#deer_tail" opacity="0.85" />
+    <g transform="translate(38 74) scale(1.18) translate(-38 -74)">
+      <use href="#deer_neck" />
+      <use href="#deer_head_common" />
+    </g>
+    <use href="#deer_eyes_female" />
+    <circle class="spot" cx="34" cy="92" r="3.4" opacity="0.24" />
+  </g>
+</svg>

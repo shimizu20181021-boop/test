@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>タイルプレビュー（PNG）</title>
+    <link rel="icon" href="data:," />
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: #f3f0e8;
+        color: rgba(0, 0, 0, 0.88);
+      }
+      .wrap {
+        max-width: 1200px;
+        margin: 18px auto;
+        padding: 0 14px 32px;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0;
+      }
+      .note {
+        margin-top: 6px;
+        font-size: 12px;
+        color: rgba(0, 0, 0, 0.62);
+      }
+      .panel {
+        margin-top: 12px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 10px;
+      }
+      .controls {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .controls label {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        font-size: 13px;
+      }
+      .controls input,
+      .controls select {
+        font-size: 13px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        border: 1px solid rgba(0, 0, 0, 0.18);
+        background: white;
+      }
+      .controls input[type="range"] {
+        width: 220px;
+        padding: 0;
+        border: none;
+        background: transparent;
+      }
+      .grid {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+      .canvasWrap {
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .canvasHeader {
+        padding: 10px 12px;
+        font-size: 12px;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: baseline;
+        color: rgba(0, 0, 0, 0.72);
+      }
+      canvas {
+        width: 100%;
+        height: auto;
+        display: block;
+        background: linear-gradient(180deg, #fbf6e9 0%, #f5e7c7 60%, #f0dba8 100%);
+      }
+      .legend {
+        font-size: 12px;
+        opacity: 0.74;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>タイルプレビュー（PNG）</h1>
+      <div class="note">灰色 / 植物（緑）/ グループカラー（塗り）の見た目確認用です。</div>
+
+      <div class="panel">
+        <div class="controls">
+          <label>
+            グループ色
+            <input id="tpColor" type="color" value="#3b82f6" />
+          </label>
+          <label>
+            濃さ
+            <select id="tpLevel">
+              <option value="1">Lv1</option>
+              <option value="2" selected>Lv2</option>
+              <option value="3">Lv3</option>
+              <option value="4">Lv4</option>
+            </select>
+          </label>
+          <label style="gap: 10px">
+            ズーム
+            <input id="tpZoom" type="range" min="0.5" max="2.5" step="0.01" value="1.0" />
+            <span id="tpZoomVal" style="min-width: 3.6em; text-align: right">1.00</span>
+          </label>
+          <span class="legend">※ 画像の読み込みに失敗する場合は Live Server で開いてください</span>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="canvasWrap">
+          <div class="canvasHeader">
+            <div>プレビュー</div>
+            <div style="opacity: 0.65">灰色 / 植物（緑） / グループカラー</div>
+          </div>
+          <canvas id="tpCanvas" width="960" height="360" aria-label="タイルプレビュー"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="./tools/tile_preview.js"></script>
+  </body>
+</html>
+

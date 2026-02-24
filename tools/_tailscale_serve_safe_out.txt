@@ -1,0 +1,7 @@
+Available within your tailnet:
+
+https://node.tail0a65d0.ts.net/
+|-- proxy http://127.0.0.1:5500
+
+Serve started and running in the background.
+To disable the proxy, run: tailscale serve --https=443 off

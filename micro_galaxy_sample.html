@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ミクロ銀河 サンプル</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: #0a0f22;
+        color: rgba(240, 245, 255, 0.92);
+      }
+      header {
+        position: fixed;
+        left: 0;
+        top: 0;
+        right: 0;
+        z-index: 10;
+        padding: 12px 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        background: linear-gradient(to bottom, rgba(10, 15, 34, 0.94), rgba(10, 15, 34, 0.5), rgba(10, 15, 34, 0));
+        pointer-events: none;
+      }
+      .title {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .title h1 {
+        margin: 0;
+        font-size: 16px;
+        letter-spacing: 0.02em;
+      }
+      .title small {
+        opacity: 0.85;
+      }
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      button {
+        pointer-events: auto;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(20, 30, 60, 0.8);
+        color: rgba(240, 245, 255, 0.92);
+        padding: 8px 10px;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: rgba(30, 45, 90, 0.9);
+      }
+      main {
+        padding: 0;
+      }
+      #c {
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="title">
+        <h1>ミクロ銀河（完成イメージ）サンプル</h1>
+        <small>星が成長して銀河化したときの見え方の参考用（ゲーム本体には未影響）</small>
+      </div>
+      <div class="actions">
+        <button id="btn-download" type="button">PNG保存</button>
+      </div>
+    </header>
+    <main>
+      <canvas id="c"></canvas>
+    </main>
+
+    <script type="module">
+      import { Renderer } from "./render/render.js";
+      import { MicroWorld } from "./world/world.js";
+
+      const canvas = document.getElementById("c");
+      const renderer = new Renderer(canvas);
+
+      const microWorld = new MicroWorld();
+      microWorld.setMergeEnabled(false); // stable snapshot (no merges)
+
+      function fit() {
+        renderer.resizeToDisplaySize();
+        microWorld.setBounds({ width: canvas.clientWidth, height: canvas.clientHeight });
+        microWorld.setPopulationTarget(120, 18);
+        microWorld.setReincarnationIndividuals(15);
+        microWorld.update(0); // spawn immediately via spawnBudget
+
+        // Create a few large "galaxy" stars (but keep below 15 to avoid reincarnation logic in the real game).
+        const ww = canvas.clientWidth;
+        const hh = canvas.clientHeight;
+        const mkGenes = (kind, n, value = 10) => Array.from({ length: n }, () => ({ kind, value }));
+
+        // Replace a handful of entities with fixed big ones so the sample always shows "galaxy".
+        const pick = (idx, x, y, genes) => {
+          const e = microWorld.entities[idx];
+          if (!e) return;
+          e.x = x;
+          e.y = y;
+          e.genes = genes;
+          e.cooldownSeconds = 0;
+          e._visualRadius = e.radius;
+        };
+
+        // Spread them like the in-game view (full screen).
+        pick(0, ww * 0.48, hh * 0.52, [...mkGenes("stamina", 5), ...mkGenes("health", 5), ...mkGenes("attack", 4)]); // 14
+        pick(1, ww * 0.72, hh * 0.34, mkGenes("health", 12)); // 12
+        pick(2, ww * 0.26, hh * 0.36, mkGenes("attack", 10)); // 10
+      }
+      window.addEventListener("resize", fit);
+      fit();
+
+      function render() {
+        renderer.render(
+          {
+            viewMode: "micro",
+            microWorld,
+            microDebug: false,
+            microStarScale: 1.0,
+            microGalaxyStrength: 1.0,
+            microGalaxyStartPct: 0.35,
+          },
+          { paused: false },
+        );
+        requestAnimationFrame(render);
+      }
+      requestAnimationFrame(render);
+
+      document.getElementById("btn-download").addEventListener("click", () => {
+        const link = document.createElement("a");
+        link.download = "micro_galaxy_sample.png";
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      });
+    </script>
+  </body>
+</html>

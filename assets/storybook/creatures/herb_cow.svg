@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Storybook creature (side view). Ground line is y=112. -->
+  <style>
+    .outline { stroke: var(--outline, #2b1b0f); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+    .outlineThin { stroke: var(--outline, #2b1b0f); stroke-width: 3.6; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+    .coat1 { fill: var(--coat1, #f2cf77); }
+    .coat2 { fill: var(--coat2, #d8a85f); }
+    .coat3 { fill: var(--coat3, #b6803a); }
+    .muzzle { fill: var(--muzzle, #f2d1a0); }
+    .spot { fill: var(--spot, #c48b45); opacity: 0.55; }
+    .eye { fill: var(--eye, #19110a); }
+    .shine { fill: rgba(255,255,255,0.85); }
+    .detail { fill: none; stroke: var(--outline, #2b1b0f); stroke-width: 3.2; opacity: 0.33; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  </style>
+
+  <defs>
+    <linearGradient id="gBody" gradientUnits="userSpaceOnUse" x1="38" y1="58" x2="110" y2="112">
+      <stop offset="0" stop-color="var(--coat1, #f2cf77)" />
+      <stop offset="0.6" stop-color="var(--coat2, #d8a85f)" />
+      <stop offset="1" stop-color="var(--coat3, #b6803a)" />
+    </linearGradient>
+  </defs>
+
+  <!-- parts -->
+  <g id="cow_body">
+    <path class="outline" fill="url(#gBody)" d="M34 78 C36 56 52 50 72 50 C94 50 110 60 110 80 C110 102 92 112 70 112 C50 112 32 102 34 78 Z" />
+    <path class="spot" d="M74 62 C86 60 98 66 96 78 C94 88 82 92 72 88 C62 84 62 66 74 62 Z" />
+    <path class="spot" d="M44 74 C52 70 62 74 60 84 C58 92 48 94 42 90 C36 86 36 78 44 74 Z" />
+    <path class="detail" d="M52 92 Q64 98 76 92" />
+  </g>
+
+  <g id="cow_tail">
+    <path class="outlineThin coat2" d="M108 78 Q122 86 112 98" />
+    <path class="outlineThin coat3" d="M112 98 Q118 106 108 110 Q116 106 112 98 Z" />
+  </g>
+
+  <g id="cow_legs">
+    <!-- back (far) -->
+    <g opacity="0.68">
+      <path class="outline coat2" d="M86 86 Q88 84 90 86 V110 Q88 112 86 110 Z" />
+      <path class="outline coat3" d="M84 108 H92 V112 H84 Z" />
+    </g>
+    <!-- front (far) -->
+    <g opacity="0.68">
+      <path class="outline coat2" d="M54 86 Q56 84 58 86 V110 Q56 112 54 110 Z" />
+      <path class="outline coat3" d="M52 108 H60 V112 H52 Z" />
+    </g>
+    <!-- back (near) -->
+    <path class="outline coat2" d="M92 86 Q94 84 96 86 V110 Q94 112 92 110 Z" />
+    <path class="outline coat3" d="M90 108 H98 V112 H90 Z" />
+    <!-- front (near) -->
+    <path class="outline coat2" d="M60 86 Q62 84 64 86 V110 Q62 112 60 110 Z" />
+    <path class="outline coat3" d="M58 108 H66 V112 H58 Z" />
+  </g>
+
+  <g id="cow_head_common">
+    <!-- ear -->
+    <path class="outline coat2" d="M28 58 Q18 54 16 62 Q18 72 30 70 Z" />
+    <!-- head -->
+    <path class="outline coat1" d="M18 72 C16 56 26 48 38 50 C50 52 56 62 54 74 C52 88 40 94 30 92 C22 90 20 82 18 72 Z" />
+    <!-- muzzle -->
+    <path class="outline muzzle" d="M10 78 C10 68 18 64 26 66 C34 68 38 74 36 82 C34 90 26 92 20 90 C14 88 10 84 10 78 Z" />
+    <circle class="eye" cx="38" cy="66" r="3.2" />
+    <circle class="shine" cx="37" cy="65" r="1.2" />
+    <circle class="eye" cx="20" cy="78" r="1.2" opacity="0.55" />
+    <circle class="eye" cx="24" cy="78" r="1.2" opacity="0.55" />
+    <path class="detail" d="M22 86 Q26 88 30 86" />
+    <!-- little hair -->
+    <path class="detail" d="M32 50 Q34 44 38 50" />
+    <path class="detail" d="M38 50 Q40 44 44 50" />
+  </g>
+
+  <g id="cow_horns_male">
+    <path class="outlineThin coat3" d="M34 52 Q30 46 24 48" />
+    <path class="outlineThin coat3" d="M44 52 Q48 46 54 48" />
+  </g>
+
+  <g id="cow_eyes_female">
+    <path class="outlineThin" fill="none" opacity="0.65" d="M34 62 Q38 58 42 62" />
+    <path class="outlineThin" fill="none" opacity="0.65" d="M42 62 Q46 58 50 62" />
+  </g>
+
+  <!-- stage renderers (male/female are separate as requested) -->
+  <g id="male_adult">
+    <use href="#cow_tail" />
+    <use href="#cow_body" />
+    <use href="#cow_legs" />
+    <use href="#cow_head_common" />
+    <use href="#cow_horns_male" />
+  </g>
+  <g id="male_young" style="display:none">
+    <g transform="translate(64 82) scale(0.98) translate(-64 -82)"><use href="#cow_body" /></g>
+    <g transform="translate(0 112) scale(1 0.92) translate(0 -112)"><use href="#cow_legs" /></g>
+    <use href="#cow_tail" />
+    <g transform="translate(34 70) scale(1.06) translate(-34 -70)"><use href="#cow_head_common" /></g>
+    <use href="#cow_horns_male" />
+  </g>
+  <g id="male_child" style="display:none">
+    <g transform="translate(64 84) scale(0.96) translate(-64 -84)"><use href="#cow_body" /></g>
+    <g transform="translate(0 112) scale(1 0.85) translate(0 -112)"><use href="#cow_legs" /></g>
+    <use href="#cow_tail" />
+    <g transform="translate(34 70) scale(1.12) translate(-34 -70)"><use href="#cow_head_common" /></g>
+    <use href="#cow_horns_male" opacity="0.65" />
+  </g>
+  <g id="male_baby" style="display:none">
+    <g transform="translate(64 86) scale(0.92) translate(-64 -86)"><use href="#cow_body" /></g>
+    <g transform="translate(0 112) scale(1 0.76) translate(0 -112)"><use href="#cow_legs" /></g>
+    <use href="#cow_tail" opacity="0.85" />
+    <g transform="translate(34 70) scale(1.18) translate(-34 -70)"><use href="#cow_head_common" /></g>
+    <use href="#cow_horns_male" opacity="0.35" />
+    <circle class="spot" cx="30" cy="86" r="3.4" opacity="0.25" />
+  </g>
+
+  <g id="female_adult" style="display:none">
+    <use href="#cow_tail" />
+    <use href="#cow_body" />
+    <use href="#cow_legs" />
+    <use href="#cow_head_common" />
+    <use href="#cow_eyes_female" />
+  </g>
+  <g id="female_young" style="display:none">
+    <g transform="translate(64 82) scale(0.98) translate(-64 -82)"><use href="#cow_body" /></g>
+    <g transform="translate(0 112) scale(1 0.92) translate(0 -112)"><use href="#cow_legs" /></g>
+    <use href="#cow_tail" />
+    <g transform="translate(34 70) scale(1.06) translate(-34 -70)"><use href="#cow_head_common" /></g>
+    <use href="#cow_eyes_female" />
+  </g>
+  <g id="female_child" style="display:none">
+    <g transform="translate(64 84) scale(0.96) translate(-64 -84)"><use href="#cow_body" /></g>
+    <g transform="translate(0 112) scale(1 0.85) translate(0 -112)"><use href="#cow_legs" /></g>
+    <use href="#cow_tail" />
+    <g transform="translate(34 70) scale(1.12) translate(-34 -70)"><use href="#cow_head_common" /></g>
+    <use href="#cow_eyes_female" />
+  </g>
+  <g id="female_baby" style="display:none">
+    <g transform="translate(64 86) scale(0.92) translate(-64 -86)"><use href="#cow_body" /></g>
+    <g transform="translate(0 112) scale(1 0.76) translate(0 -112)"><use href="#cow_legs" /></g>
+    <use href="#cow_tail" opacity="0.85" />
+    <g transform="translate(34 70) scale(1.18) translate(-34 -70)"><use href="#cow_head_common" /></g>
+    <use href="#cow_eyes_female" />
+    <circle class="spot" cx="30" cy="86" r="3.4" opacity="0.25" />
+  </g>
+</svg>
+
