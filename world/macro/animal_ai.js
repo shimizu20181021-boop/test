@@ -142,12 +142,12 @@ export function stepAnimalAi({
   const hpMax = Math.max(1, e.hpMax ?? BASE_STAT);
   const hungerPct = clamp((e.hungerMax ?? 0) > 0 ? (e.hunger ?? 0) / e.hungerMax : 1, 0, 1);
 
-  const winglessForTargeting = (Number(e.variant?.wingCount) || 0) <= 0;
+  const isBirdForTargeting = e.taxon === "bird";
   const curTx = clampInt(Math.floor(wrapCoord(e.x, w) / tile), 0, tw - 1);
   const curTy = clampInt(Math.floor(wrapCoord(e.y, h) / tile), 0, th - 1);
-  const curH = winglessForTargeting ? world.getElevationAtTile(curTx, curTy) : 0;
+  const curH = !isBirdForTargeting ? world.getElevationAtTile(curTx, curTy) : 0;
   const canReachByTerrain = (o) => {
-    if (!winglessForTargeting) return true;
+    if (isBirdForTargeting) return true;
     if (!o || o._dead) return false;
     const px = wrapCoord(o.x, w);
     const py = wrapCoord(o.y, h);

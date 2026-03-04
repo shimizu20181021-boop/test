@@ -87,11 +87,11 @@ export function stepAnimalMovement({
   let dy = wrapDelta(e.y, gy, h);
   let d = Math.hypot(dx, dy);
 
-  const wingless = (Number(e.variant?.wingCount) || 0) <= 0;
+  const groundBound = e.taxon !== "bird";
   let terrainSpeedMul = 1;
   let terrainStaminaMul = 1;
 
-  if (d > 0.001 && wingless) {
+  if (d > 0.001 && groundBound) {
     const cx = Math.floor((Number(e.x) || 0) / tile);
     const cy = Math.floor((Number(e.y) || 0) / tile);
     const curH = world.getElevationAtTile(cx, cy);

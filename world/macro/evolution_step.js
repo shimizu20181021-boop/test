@@ -1,6 +1,5 @@
 import { clamp } from "../../core/utils.js";
-import { DEV_APPROACH_TAU } from "./constants.js";
-import { clamp01, clampInt, lerpExp } from "./math.js";
+import { clamp01, lerpExp } from "./math.js";
 import { ensureVariantBases } from "./variant.js";
 
 export function evolutionStepEntity({ world, entity, dt, tileSizePx, tileWidth, tileHeight }) {
@@ -74,38 +73,14 @@ export function evolutionStepEntity({ world, entity, dt, tileSizePx, tileWidth, 
   v.bodyScaleY = lerpExp(v.bodyScaleY ?? 1, bodyYTarget, dt, 18);
   v.headAspect = lerpExp(v.headAspect ?? 1, headAspectTarget, dt, 18);
 
-  // Trait development (horn/tail/wing): genetics (potential) + recent behavior.
-  const attackAct = clamp01((Number(entity.attackImpulse) || 0) / 10);
-  const moveAct = clamp01((Number(entity.moveImpulse) || 0) / 60);
-  const exploreAct = clamp01((Number(entity.exploreImpulse) || 0) / 80);
-
-  const hornPot = clamp01(Number(genome.hornPotential) || 0);
-  const tailPot = clamp01(Number(genome.tailPotential) || 0);
-  const wingPot = clamp01(Number(genome.wingPotential) || 0);
-
-  const hornDesired = clamp01(hornPot * 0.4 + attackAct * 0.6);
-  const tailDesired = clamp01(tailPot * 0.4 + moveAct * 0.6);
-  const wingDesired = clamp01(wingPot * 0.4 + exploreAct * 0.6);
-
-  entity.hornDev = lerpExp(entity.hornDev ?? 0, hornDesired, dt, DEV_APPROACH_TAU);
-  entity.tailDev = lerpExp(entity.tailDev ?? 0, tailDesired, dt, DEV_APPROACH_TAU);
-  entity.wingDev = lerpExp(entity.wingDev ?? 0, wingDesired, dt, DEV_APPROACH_TAU);
-
-  v.hornCount = clampInt(Math.round(clamp01(entity.hornDev) * 3), 0, 3);
-  v.tailCount = clampInt(Math.round(clamp01(entity.tailDev) * 3), 0, 3);
-  // Wings: keep "count" fixed (genetic), and only develop by scaling up/down.
-  // (User request: fitness-based growth should not increase wing count.)
-  v.wingCount = clampInt(Number.isFinite(Number(v._baseWingCount)) ? Number(v._baseWingCount) : v.wingCount ?? 0, 0, 4);
-
-  const hornScaleBase = Number(v._baseHornScale) || 1;
-  const tailScaleBase = Number(v._baseTailScale) || 1;
-  const wingScaleBase = Number(v._baseWingScale) || 1;
-
-  const hornScaleTarget = clamp(hornScaleBase * (0.8 + clamp01(entity.hornDev) * 0.7), 0.6, 1.8);
-  const tailScaleTarget = clamp(tailScaleBase * (0.8 + clamp01(entity.tailDev) * 0.7), 0.6, 1.8);
-  const wingScaleTarget = clamp(wingScaleBase * (0.8 + clamp01(entity.wingDev) * 0.7), 0.6, 1.8);
-
-  v.hornScale = lerpExp(v.hornScale ?? hornScaleBase, hornScaleTarget, dt, 8);
-  v.tailScale = lerpExp(v.tailScale ?? tailScaleBase, tailScaleTarget, dt, 8);
-  v.wingScale = lerpExp(v.wingScale ?? wingScaleBase, wingScaleTarget, dt, 8);
+  // Parts (horn/wing/tail) are disabled in the main game: keep them at zero.
+  entity.hornDev = 0;
+  entity.tailDev = 0;
+  entity.wingDev = 0;
+  v.hornCount = 0;
+  v.tailCount = 0;
+  v.wingCount = 0;
+  v.hornScale = Number(v._baseHornScale) || 1;
+  v.tailScale = Number(v._baseTailScale) || 1;
+  v.wingScale = Number(v._baseWingScale) || 1;
 }

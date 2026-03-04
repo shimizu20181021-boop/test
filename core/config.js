@@ -22,7 +22,7 @@ export const DEFAULT_SETTINGS = {
   macroPopCapHerbivore: 500,
   macroPopCapOmnivore: 500,
   macroPopCapCarnivore: 500,
-  macroGroupMaxSize: 4,
+  macroGroupMaxSize: 8,
   macroHerbReproPreset: "normal",
   macroHerbBirthPreset: "normal",
   macroOmniReproPreset: "normal",
@@ -45,7 +45,7 @@ export const DEFAULT_SETTINGS = {
   macroCarnHungerDecayMul: 1.0,
   macroCarnAttackMul: 2.0,
   macroMeatRotEnabled: true,
-  macroEvolutionMode: "natural",
+  macroEvolutionMode: "ga",
   fitnessChildWeight: 60,
   macroNnVizBlinkMode: "flash", // "always" | "flash"
   macroNnVizOutputsMode: "compact", // "compact" | "full"

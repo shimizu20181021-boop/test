@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>マクロ世界 絵本風・幻想スタイル プレビュー</title>
+    <link rel="icon" href="data:," />
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: #f3f0e8;
+        color: rgba(0, 0, 0, 0.88);
+      }
+      .wrap {
+        max-width: 1320px;
+        margin: 18px auto;
+        padding: 0 14px 32px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 18px;
+      }
+      .note {
+        margin-top: 6px;
+        font-size: 12px;
+        color: rgba(0, 0, 0, 0.62);
+      }
+      .panel {
+        margin-top: 12px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 10px;
+      }
+      .controls {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .controls label {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        font-size: 13px;
+      }
+      .controls input,
+      .controls select,
+      .controls button {
+        font-size: 13px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        border: 1px solid rgba(0, 0, 0, 0.18);
+        background: white;
+      }
+      .controls input[type="range"] {
+        width: 220px;
+        padding: 0;
+        border: none;
+        background: transparent;
+      }
+      .controls button {
+        cursor: pointer;
+      }
+      .controls button:hover {
+        background: rgba(0, 0, 0, 0.04);
+      }
+      .canvasWrap {
+        margin-top: 12px;
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .canvasHeader {
+        padding: 10px 12px;
+        font-size: 12px;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: baseline;
+        color: rgba(0, 0, 0, 0.72);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+      }
+      canvas {
+        width: 100%;
+        height: auto;
+        display: block;
+        touch-action: none;
+        background: #f4efe1;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>マクロ世界 絵本風・幻想スタイル プレビュー</h1>
+      <div class="note">※雰囲気確認用のみ（ゲーム本体にはまだ未反映）</div>
+
+      <div class="panel">
+        <div class="controls">
+          <label>
+            季節
+            <select id="msSeason">
+              <option value="spring">春</option>
+              <option value="summer">夏</option>
+              <option value="autumn">秋</option>
+              <option value="winter">冬</option>
+            </select>
+          </label>
+
+          <label>
+            天気
+            <select id="msWeather">
+              <option value="sunny">晴れ</option>
+              <option value="cloudy">曇り</option>
+              <option value="rainy">雨</option>
+              <option value="snowy">雪</option>
+              <option value="drought">日照り</option>
+            </select>
+          </label>
+
+          <label style="gap: 10px">
+            ズーム
+            <input id="msZoom" type="range" min="0.5" max="2.8" step="0.01" value="1.0" />
+            <span id="msZoomVal" style="min-width: 3.8em; text-align: right">1.00</span>
+          </label>
+
+          <button id="msRandomize" type="button" title="地形・陣地などを再生成します">マップ再生成</button>
+
+          <span style="opacity: 0.7">
+            濡れ: <code id="msWet">0%</code> / 積雪: <code id="msSnow">0%</code>
+          </span>
+        </div>
+
+        <div class="controls" style="margin-top: 10px">
+          <label><input id="msLayerMount" type="checkbox" checked />山</label>
+          <label><input id="msLayerPlant" type="checkbox" checked />植物周辺の緑</label>
+          <label><input id="msLayerTerr" type="checkbox" checked />陣地カラー(4段階)</label>
+          <label><input id="msLayerWetSnow" type="checkbox" checked />雨の濡れ/水たまり/雪</label>
+        </div>
+      </div>
+
+      <div class="canvasWrap">
+        <div class="canvasHeader">
+          <div>ドラッグで移動 / ホイールでズーム</div>
+          <div style="opacity: 0.65">プレビュー用の簡易地形（草地/土/砂 + 山 + 合成レイヤー）</div>
+        </div>
+        <canvas id="msCanvas" width="1100" height="620" aria-label="マクロ世界 絵本風・幻想スタイル プレビュー"></canvas>
+      </div>
+    </div>
+
+    <script type="module" src="./tools/macro_style_preview.js"></script>
+  </body>
+</html>

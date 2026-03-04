@@ -8,18 +8,63 @@ const DESIGNS = [
   { id: "herb_pig", label: "草食（ブタ）" },
   { id: "herb_horse", label: "草食（ウマ）" },
   { id: "herb_zebra", label: "草食（シマウマ）" },
+  { id: "herb_pigeon", label: "草食（ハト）" },
   { id: "omn_mouse", label: "雑食（ネズミ）" },
   { id: "omn_boar", label: "雑食（イノシシ）" },
+  { id: "omn_crow", label: "雑食（カラス）" },
   { id: "omn_bear", label: "雑食（クマ）" },
   { id: "pred_wolf", label: "肉食（オオカミ）" },
   { id: "pred_cat", label: "肉食（ネコ）" },
   { id: "pred_raccoon", label: "肉食（アライグマ）" },
   { id: "pred_lion", label: "肉食（ライオン）" },
+  { id: "pred_owl", label: "肉食（フクロウ）" },
 ];
 
 const ASSET_BASE = "./assets/storybook/creatures_png";
 const SAMPLE_BASE = "./assets/sample";
+const ANIM_BASE = "./assets/アニメーション";
 const CACHE_BUST = String(Date.now());
+
+// 移動（歩行/飛行）スプライトシート（7フレーム）
+// NOTE: ここでは「素材確認用」のため、ディレクトリ名の日本語をそのまま使用します。
+const MOVE_ANIM_BY_DESIGN = {
+  herb_pig: { dietDir: "草食", species: "豚" },
+  herb_horse: { dietDir: "草食", species: "馬" },
+  herb_zebra: { dietDir: "草食", species: "シマウマ" },
+  herb_pigeon: { dietDir: "草食", species: "ハト" },
+
+  omn_mouse: { dietDir: "雑食", species: "ネズミ" },
+  omn_boar: { dietDir: "雑食", species: "イノシシ" },
+  omn_crow: { dietDir: "雑食", species: "カラス" },
+  pred_raccoon: { dietDir: "雑食", species: "アライグマ" },
+
+  pred_wolf: { dietDir: "肉食", species: "オオカミ" },
+  omn_bear: { dietDir: "肉食", species: "クマ" },
+  pred_owl: { dietDir: "肉食", species: "フクロウ" },
+  pred_lion: { dietDir: "肉食", species: "ライオン" },
+
+  // NOTE: フォルダ上の分類に合わせています（現状：草食/猫）
+  pred_cat: { dietDir: "草食", species: "猫" },
+};
+
+const STAGE_JP = {
+  baby: "赤ちゃん",
+  child: "子供",
+  young: "若大人",
+  adult: "大人",
+};
+
+function moveAnimSheetUrl(designId, sex, stage) {
+  const id = String(designId || "");
+  const spec = MOVE_ANIM_BY_DESIGN[id];
+  if (!spec) return "";
+  const sexJp = String(sex || "male") === "female" ? "雌" : "雄";
+  const stageJp = STAGE_JP[String(stage || "adult")] || STAGE_JP.adult;
+  const sp = String(spec.species || "");
+  const dd = String(spec.dietDir || "");
+  if (!sp || !dd) return "";
+  return `${ANIM_BASE}/${dd}/${sp}/移動/${sp}${sexJp}_${stageJp}.png?v=${encodeURIComponent(CACHE_BUST)}`;
+}
 
 const PART_SETS = {
   horn: { dir: "ツノ", prefix: "ツノ", count: 3, label: "ツノ" },
@@ -170,8 +215,415 @@ function loadKeyedDrawable(url, { bgThreshold = 210, chromaThreshold = 18 } = {}
   return p;
 }
 
+const darkKeyedDrawableCache = new Map();
+function loadDarkKeyedDrawable(url, { bgMaxThreshold = 12, chromaThreshold = 18 } = {}) {
+  const u = String(url || "");
+  const key = `${u}|dark|max=${bgMaxThreshold}|ch=${chromaThreshold}`;
+  if (darkKeyedDrawableCache.has(key)) return darkKeyedDrawableCache.get(key);
+
+  const p = loadImage(u).then((img) => {
+    const w = Math.max(1, Number(img.naturalWidth || img.width || 1));
+    const h = Math.max(1, Number(img.naturalHeight || img.height || 1));
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return img;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+
+    const im = ctx.getImageData(0, 0, w, h);
+    const d = im.data;
+
+    const pxCount = w * h;
+    const seen = new Uint8Array(pxCount);
+    const queue = [];
+    queue.length = 0;
+
+    const isCandidate = (p0) => {
+      const i = p0 * 4;
+      const a = d[i + 3];
+      if (a <= 0) return false;
+      const r = d[i];
+      const g = d[i + 1];
+      const b = d[i + 2];
+      const max = r > g ? (r > b ? r : b) : g > b ? g : b;
+      if (max > bgMaxThreshold) return false;
+      const min = r < g ? (r < b ? r : b) : g < b ? g : b;
+      const chroma = max - min;
+      return chroma <= chromaThreshold;
+    };
+
+    const pushIf = (p0) => {
+      if (p0 < 0 || p0 >= pxCount) return;
+      if (seen[p0]) return;
+      if (!isCandidate(p0)) return;
+      seen[p0] = 1;
+      d[p0 * 4 + 3] = 0;
+      queue.push(p0);
+    };
+
+    // seed: edge pixels only (prevents eating into dark details inside the object)
+    for (let x = 0; x < w; x++) {
+      pushIf(x);
+      pushIf((h - 1) * w + x);
+    }
+    for (let y = 1; y < h - 1; y++) {
+      pushIf(y * w);
+      pushIf(y * w + (w - 1));
+    }
+
+    for (let qi = 0; qi < queue.length; qi++) {
+      const p0 = queue[qi];
+      const x = p0 % w;
+      const y = (p0 / w) | 0;
+      if (x > 0) pushIf(p0 - 1);
+      if (x < w - 1) pushIf(p0 + 1);
+      if (y > 0) pushIf(p0 - w);
+      if (y < h - 1) pushIf(p0 + w);
+    }
+    ctx.putImageData(im, 0, 0);
+    return c;
+  });
+
+  darkKeyedDrawableCache.set(key, p);
+  return p;
+}
+
 function loadDrawable(url, { keyBg = false } = {}) {
   return keyBg ? loadKeyedDrawable(url) : loadImage(url);
+}
+
+const spriteSheetFramesCache = new Map();
+function loadSpriteSheetFrames(
+  url,
+  {
+    frameCount = 4,
+    targetSize = 512,
+    alphaThreshold = 8,
+    paddingPct = 0.1,
+    bgMaxThreshold = 12,
+    chromaThreshold = 18,
+    searchRadiusPx = 260,
+    splitMode = "auto", // "auto" | "equal"
+  } = {},
+) {
+  const u = String(url || "");
+  if (!u) return Promise.resolve(null);
+  const fc = clampInt(frameCount, 1, 16);
+  const mode = splitMode === "equal" ? "equal" : "auto";
+  const key = `${u}|fc=${fc}|ts=${targetSize}|a=${alphaThreshold}|pad=${paddingPct}|bgMax=${bgMaxThreshold}|ch=${chromaThreshold}|sr=${searchRadiusPx}|m=${mode}`;
+  if (spriteSheetFramesCache.has(key)) return spriteSheetFramesCache.get(key);
+
+  const p = loadDarkKeyedDrawable(u, { bgMaxThreshold, chromaThreshold }).then((sheet0) => {
+    if (!sheet0 || typeof document === "undefined") return null;
+
+    const { w: sw, h: sh } = drawableSize(sheet0);
+    if (!(sw > 0 && sh > 0)) return null;
+
+    const tmp = document.createElement("canvas");
+    tmp.width = sw;
+    tmp.height = sh;
+    const tctx = tmp.getContext("2d", { willReadFrequently: true });
+    if (!tctx) return null;
+    tctx.clearRect(0, 0, sw, sh);
+    tctx.drawImage(sheet0, 0, 0);
+
+    const im = tctx.getImageData(0, 0, sw, sh);
+    const d = im.data;
+
+    // Additional background keying for "non-dark" sprite sheets (e.g. gray gradient backdrops).
+    // IMPORTANT: Only run this when the edges are still mostly opaque after dark-keying.
+    // Otherwise (e.g. black BG already removed), edge-touching subjects like birds can be erased.
+    const shouldBrightKey = (() => {
+      const step = 4;
+      let total = 0;
+      let opaque = 0;
+      const aThr = clampInt(alphaThreshold, 0, 255);
+      const count = (x, y) => {
+        total++;
+        const a = d[(y * sw + x) * 4 + 3];
+        if (a > aThr) opaque++;
+      };
+      for (let x = 0; x < sw; x += step) {
+        count(x, 0);
+        count(x, sh - 1);
+      }
+      for (let y = step; y < sh - step; y += step) {
+        count(0, y);
+        count(sw - 1, y);
+      }
+      const ratio = total > 0 ? opaque / total : 0;
+      // Heuristic: if >~12% of edge samples are opaque, the background wasn't dark-keyed away.
+      return ratio > 0.12;
+    })();
+
+    if (shouldBrightKey) {
+      const bgThreshold = 40;
+      const pxCount = sw * sh;
+      const seen = new Uint8Array(pxCount);
+      const queue = [];
+      queue.length = 0;
+
+      const isCandidate = (p0) => {
+        const i = p0 * 4;
+        const a = d[i + 3];
+        if (a <= 0) return false;
+        const r = d[i];
+        const g = d[i + 1];
+        const b = d[i + 2];
+        const max = r > g ? (r > b ? r : b) : g > b ? g : b;
+        if (max < bgThreshold) return false;
+        const min = r < g ? (r < b ? r : b) : g < b ? g : b;
+        const chroma = max - min;
+        return chroma <= chromaThreshold;
+      };
+
+      const pushIf = (p0) => {
+        if (p0 < 0 || p0 >= pxCount) return;
+        if (seen[p0]) return;
+        if (!isCandidate(p0)) return;
+        seen[p0] = 1;
+        d[p0 * 4 + 3] = 0;
+        queue.push(p0);
+      };
+
+      // seed edges
+      for (let x = 0; x < sw; x++) {
+        pushIf(x);
+        pushIf((sh - 1) * sw + x);
+      }
+      for (let y = 1; y < sh - 1; y++) {
+        pushIf(y * sw);
+        pushIf(y * sw + (sw - 1));
+      }
+
+      for (let qi = 0; qi < queue.length; qi++) {
+        const p0 = queue[qi];
+        const x = p0 % sw;
+        const y = (p0 / sw) | 0;
+        if (x > 0) pushIf(p0 - 1);
+        if (x < sw - 1) pushIf(p0 + 1);
+        if (y > 0) pushIf(p0 - sw);
+        if (y < sh - 1) pushIf(p0 + sw);
+      }
+    }
+
+    // Write back keying results so downstream drawImage uses the keyed pixels.
+    if (shouldBrightKey) tctx.putImageData(im, 0, 0);
+
+    const countColumnAlpha = (x) => {
+      const xx = clampInt(x, 0, sw - 1);
+      let c = 0;
+      for (let y = 0; y < sh; y += 2) {
+        const a = d[(y * sw + xx) * 4 + 3];
+        if (a > alphaThreshold) c++;
+      }
+      return c;
+    };
+
+    const counts = new Int32Array(sw);
+    let maxCount = 0;
+    for (let x = 0; x < sw; x++) {
+      const c = countColumnAlpha(x);
+      counts[x] = c;
+      if (c > maxCount) maxCount = c;
+    }
+
+    const getCutsAuto = () => {
+      if (!(fc >= 2)) return [];
+
+      const smoothRadius = 2;
+      const smooth = new Int32Array(sw);
+      for (let x = 0; x < sw; x++) {
+        let sum = 0;
+        const start = Math.max(0, x - smoothRadius);
+        const end = Math.min(sw - 1, x + smoothRadius);
+        for (let i = start; i <= end; i++) sum += counts[i];
+        smooth[x] = sum;
+      }
+
+      const findMinIdx = (start, end) => {
+        let best = start;
+        let bestV = 2147483647;
+        for (let x = start; x <= end; x++) {
+          const v = smooth[x];
+          if (v < bestV) {
+            bestV = v;
+            best = x;
+          }
+        }
+        return best;
+      };
+
+      const findBestValley = (start, end, center) => {
+        let best = -1;
+        let bestV = 2147483647;
+        let bestDist = 2147483647;
+        for (let x = start + 1; x <= end - 1; x++) {
+          const v = smooth[x];
+          if (v <= smooth[x - 1] && v <= smooth[x + 1]) {
+            const dist = Math.abs(x - center) | 0;
+            if (v < bestV || (v === bestV && dist < bestDist)) {
+              best = x;
+              bestV = v;
+              bestDist = dist;
+            }
+          }
+        }
+        if (best >= 0) return best;
+        return findMinIdx(start, end);
+      };
+
+      const cuts = [];
+      let prev = 0;
+      for (let i = 1; i < fc; i++) {
+        const center = Math.round((sw * i) / fc);
+        const start = clampInt(center - searchRadiusPx, prev + 10, sw - 2);
+        const end = clampInt(center + searchRadiusPx, start + 10, sw - 2);
+        const cut = findBestValley(start, end, center);
+        cuts.push(cut);
+        prev = cut;
+      }
+      // ensure strictly increasing & in bounds
+      for (let i = 0; i < cuts.length; i++) {
+        const min = i === 0 ? 5 : cuts[i - 1] + 10;
+        const max = sw - 6;
+        cuts[i] = clampInt(cuts[i], min, max);
+      }
+      return cuts;
+    };
+
+    const getCutsEqual = () => {
+      // Use rounded boundaries so the remainder is distributed.
+      const cuts = [];
+      for (let i = 1; i < fc; i++) {
+        const boundary = Math.round((sw * i) / fc);
+        cuts.push(boundary - 1);
+      }
+      // ensure strictly increasing & in bounds (same policy as auto)
+      for (let i = 0; i < cuts.length; i++) {
+        const min = i === 0 ? 5 : cuts[i - 1] + 10;
+        const max = sw - 6;
+        cuts[i] = clampInt(cuts[i], min, max);
+      }
+      return cuts.map((x) => clampInt(x, 0, sw - 2));
+    };
+
+    const cuts = mode === "equal" ? getCutsEqual() : getCutsAuto();
+    const useCuts = Array.isArray(cuts) && cuts.length === fc - 1 ? cuts : getCutsEqual();
+
+    const segments = [];
+    let segX0 = 0;
+    for (let i = 0; i < fc; i++) {
+      const segX1 = i === fc - 1 ? sw - 1 : clampInt(useCuts[i], segX0, sw - 2);
+      segments.push({ x0: segX0, x1: segX1 });
+      segX0 = segX1 + 1;
+    }
+
+    const bounds = [];
+    for (let fi = 0; fi < fc; fi++) {
+      const seg = segments[fi];
+      if (!seg) {
+        bounds.push(null);
+        continue;
+      }
+
+      const x0 = seg.x0;
+      const x1 = seg.x1;
+      const scanX0 = x0;
+      const scanX1 = x1;
+
+      let minX = scanX1;
+      let minY = sh - 1;
+      let maxX = scanX0;
+      let maxY = 0;
+      let found = false;
+
+      for (let y = 0; y < sh; y++) {
+        let row = (y * sw + scanX0) * 4;
+        for (let x = scanX0; x <= scanX1; x++) {
+          const a = d[row + 3];
+          if (a > alphaThreshold) {
+            found = true;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+          row += 4;
+        }
+      }
+
+      if (!found) bounds.push(null);
+      else bounds.push({ minX: minX - x0, maxX: maxX - x0, minY, maxY });
+    }
+
+    const valid = bounds.filter(Boolean);
+    if (!valid.length) return null;
+
+    const outSize = Math.max(0, Math.round(Number(targetSize) || 0));
+    const frames = new Array(fc);
+    for (let fi = 0; fi < fc; fi++) {
+      const seg = segments[fi];
+      const b = bounds[fi];
+      if (!seg || !b) {
+        frames[fi] = null;
+        continue;
+      }
+
+      const segW = Math.max(1, seg.x1 - seg.x0 + 1);
+      const bw = Math.max(1, b.maxX - b.minX + 1);
+      const bh = Math.max(1, b.maxY - b.minY + 1);
+      const pad = Math.max(0, Math.round(Math.max(bw, bh) * clampNumber(paddingPct, 0, 0.5)));
+
+      const minCropX = 0;
+      const maxCropX = Math.max(minCropX, segW - 1);
+
+      const cropX0 = clampInt(b.minX - pad, minCropX, maxCropX);
+      const cropX1 = clampInt(b.maxX + pad, minCropX, maxCropX);
+      const cropY0 = clampInt(b.minY - pad, 0, sh - 1);
+      const cropY1 = clampInt(b.maxY + pad, 0, sh - 1);
+
+      const cropW = Math.max(1, cropX1 - cropX0 + 1);
+      const cropH = Math.max(1, cropY1 - cropY0 + 1);
+      const srcX = seg.x0 + cropX0;
+      const srcY = cropY0;
+
+      const c = document.createElement("canvas");
+      const dstSize = outSize > 0 ? outSize : cropW;
+      c.width = dstSize;
+      c.height = outSize > 0 ? outSize : cropH;
+      const cctx = c.getContext("2d");
+      if (!cctx) {
+        frames[fi] = c;
+        continue;
+      }
+      cctx.clearRect(0, 0, c.width, c.height);
+
+      if (outSize > 0) {
+        const outerPad = Math.round(dstSize * 0.04);
+        const availW = Math.max(1, dstSize - 2 * outerPad);
+        const availH = Math.max(1, dstSize - 2 * outerPad);
+        const scale = Math.max(0.0001, Math.min(availW / cropW, availH / cropH));
+        const dw = Math.max(1, Math.round(cropW * scale));
+        const dh = Math.max(1, Math.round(cropH * scale));
+        const dx = Math.round((dstSize - dw) / 2);
+        const dy = Math.round((dstSize - dh) / 2);
+        cctx.drawImage(tmp, srcX, srcY, cropW, cropH, dx, dy, dw, dh);
+      } else {
+        cctx.drawImage(tmp, srcX, srcY, cropW, cropH, 0, 0, cropW, cropH);
+      }
+
+      frames[fi] = c;
+    }
+
+    return { frames, frameCount: fc, url: u };
+  });
+
+  spriteSheetFramesCache.set(key, p);
+  return p;
 }
 
 function drawableSize(drawable) {
@@ -269,11 +721,13 @@ function randomTintFor(_designId) {
 }
 
 function isHerbDesign(designId) {
-  return String(designId || "").startsWith("herb_");
+  const id = String(designId || "");
+  return id.startsWith("herb_");
 }
 
 function isOmniDesign(designId) {
-  return String(designId || "").startsWith("omn_");
+  const id = String(designId || "");
+  return id.startsWith("omn_");
 }
 
 function foodKindForDesign(designId) {
@@ -474,6 +928,12 @@ class SimpleSim {
 
     this.spriteUrl = "";
     this.spriteImg = null;
+    this.walkSheetUrl = "";
+    this.walkFrames = null;
+    this.walkFramesLoading = null;
+    this.eatSheetUrl = "";
+    this.eatFrames = null;
+    this.eatFramesLoading = null;
 
     // overlay parts + plants (from assets/sample)
     this.keyBg = true;
@@ -523,6 +983,7 @@ class SimpleSim {
 
     // simple "life" animations
     this.walkPhase = 0;
+    this.facing = -1; // -1: left (default PNG direction), +1: right
     this.chewPhase = 0;
     this.chewFxT = 0;
 
@@ -566,6 +1027,7 @@ class SimpleSim {
       this.partLoading = { horn: null, wing: null };
       this.plantDrawables.clear();
       this.plantLoading.clear();
+      this._syncWalkSheet();
     }
     this._syncParts();
   }
@@ -581,6 +1043,7 @@ class SimpleSim {
       this.plantDrawables.clear();
       this.plantLoading.clear();
       this._syncParts();
+      this._syncWalkSheet();
     }
     const v = String(plant ?? "random");
     if (v === "random") this.plantMode = "random";
@@ -665,6 +1128,74 @@ class SimpleSim {
         // eslint-disable-next-line no-console
         console.error(err);
         this.spriteImg = null;
+      });
+
+    this._syncWalkSheet();
+    this._syncEatSheet();
+  }
+
+  _syncWalkSheet() {
+    const url = moveAnimSheetUrl(this.designId, this.sex, this.stage);
+    if (url === this.walkSheetUrl) return;
+
+    this.walkSheetUrl = url;
+    this.walkFrames = null;
+    this.walkFramesLoading = null;
+    if (!url) return;
+
+    const token = url;
+    this.walkFramesLoading = loadSpriteSheetFrames(url, {
+      frameCount: 7,
+      targetSize: 512,
+      alphaThreshold: 8,
+      paddingPct: 0.12,
+      bgMaxThreshold: 12,
+      chromaThreshold: 18,
+      searchRadiusPx: 260,
+      // Most sheets have clear gaps (e.g. ~80px) between frames, but frame widths vary.
+      // Use auto valley detection so cuts land inside the gaps (prevents neighboring-frame bleed).
+      splitMode: "auto",
+    })
+      .then((res) => {
+        if (this.walkSheetUrl !== token) return;
+        this.walkFrames = res?.frames || null;
+      })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error(err);
+        if (this.walkSheetUrl === token) this.walkFrames = null;
+      });
+  }
+
+  _syncEatSheet() {
+    // NOTE: 今回は「食事フォルダ」を無視するため、食事アニメは未対応（通常の咀嚼エフェクトのみ）。
+    const url = "";
+    if (url === this.eatSheetUrl) return;
+
+    this.eatSheetUrl = url;
+    this.eatFrames = null;
+    this.eatFramesLoading = null;
+    if (!url) return;
+
+    const token = url;
+    this.eatFramesLoading = loadSpriteSheetFrames(url, {
+      frameCount: 8,
+      targetSize: 512,
+      alphaThreshold: 8,
+      paddingPct: 0.1,
+      bgMaxThreshold: 12,
+      chromaThreshold: 18,
+      searchRadiusPx: 180,
+      splitMode: "auto",
+    })
+      .then((res) => {
+        if (this.eatSheetUrl !== token) return;
+        this.eatFrames = res?.frames || null;
+      })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error(err);
+        if (this.eatSheetUrl === token) this.eatFrames = null;
       });
   }
 
@@ -888,6 +1419,8 @@ class SimpleSim {
     const speed = Math.hypot(this.velX, this.velY);
     const moving = speed > 10 && this.state !== "eat";
     if (moving) {
+      if (this.velX > 10) this.facing = 1;
+      else if (this.velX < -10) this.facing = -1;
       const rate = clampNumber(speed / 92, 0.65, 2.6);
       this.walkPhase = (this.walkPhase + dt * rate * Math.PI * 2) % (Math.PI * 2);
     }
@@ -929,7 +1462,13 @@ class SimpleSim {
     const h = Math.round(this.hunger * 100);
     const stateLabel =
       this.state === "seek_food" ? "食事へ移動" : this.state === "eat" ? "食事" : this.foods.length ? "徘徊（食事待ち）" : "徘徊";
-    this.statusEl.textContent = `状態: ${stateLabel} / 空腹: ${h}% / ごはん: ${this.foods.length}`;
+    const walkCount = Array.isArray(this.walkFrames) ? this.walkFrames.filter(Boolean).length : 0;
+    const eatCount = Array.isArray(this.eatFrames) ? this.eatFrames.filter(Boolean).length : 0;
+    const notes = [];
+    if (this.walkSheetUrl && walkCount) notes.push(`歩行:${walkCount}f`);
+    if (this.eatSheetUrl && eatCount) notes.push(`食事:${eatCount}f`);
+    const animNote = notes.length ? ` / アニメ: ${notes.join(" / ")}` : "";
+    this.statusEl.textContent = `状態: ${stateLabel} / 空腹: ${h}% / ごはん: ${this.foods.length}${animNote}`;
   }
 
   _drawFoodIcon(ctx, x, y, kind) {
@@ -1093,7 +1632,26 @@ class SimpleSim {
       this._drawFood(ctx, sp.x, sp.y, f);
     }
 
-    const img = this.spriteImg;
+    const speed = Math.hypot(this.velX, this.velY);
+    const moving = speed > 10 && this.state !== "eat";
+
+    const walkFrames = this.walkFrames;
+    const eatFrames = this.eatFrames;
+    let img = this.spriteImg;
+    // Prefer animated sheet's idle frame so style stays consistent.
+    if (this.walkSheetUrl && Array.isArray(walkFrames) && walkFrames.length) {
+      img = walkFrames[0] || img;
+    }
+    if (this.state === "eat" && Array.isArray(eatFrames) && eatFrames.length) {
+      const phase01 = (this.chewPhase / (Math.PI * 2)) % 1;
+      const idx = clampInt(Math.floor(phase01 * eatFrames.length), 0, eatFrames.length - 1);
+      img = eatFrames[idx] || eatFrames[0] || img;
+    } else if (moving && Array.isArray(walkFrames) && walkFrames.length) {
+      const phase01 = (this.walkPhase / (Math.PI * 2)) % 1;
+      const idx = clampInt(Math.floor(phase01 * walkFrames.length), 0, walkFrames.length - 1);
+      img = walkFrames[idx] || walkFrames[0] || img;
+    }
+
     if (!img) {
       ctx.fillStyle = "rgba(0,0,0,0.65)";
       ctx.font = "14px sans-serif";
@@ -1110,19 +1668,14 @@ class SimpleSim {
     const drawW = spriteWorldW * z;
     const drawH = spriteWorldH * z;
 
-    const speed = Math.hypot(this.velX, this.velY);
-    const moving = speed > 10 && this.state !== "eat";
-    const walkAmt = moving ? clampNumber(speed / 160, 0, 1) : 0;
-    const step = Math.sin(this.walkPhase);
-    const bounce = moving ? Math.abs(step) : 0; // 0..1, two peaks per cycle
-    const bounceCentered = bounce * 2 - 1; // -1..1 (foot contact low -> -1)
-    const bob = moving
-      ? bounceCentered * (this.tileSize * 0.09 * z) * (0.35 + 0.65 * walkAmt)
-      : this.state === "eat"
-        ? Math.sin(this.chewPhase) * (this.tileSize * 0.06 * z) * (0.4 + 0.6 * this.chewFxT)
-        : 0;
+    // NOTE: Walking bob/sway intentionally disabled; use sprite-sheet motion only.
+    const bob = this.state === "eat"
+      ? Math.sin(this.chewPhase) * (this.tileSize * 0.06 * z) * (0.4 + 0.6 * this.chewFxT)
+      : 0;
 
-    const facingLeft = this.velX < -10;
+    // Base sprites face LEFT by default (most provided PNGs are left-facing).
+    // Flip horizontally when moving to the RIGHT.
+    const flipX = (this.facing || -1) > 0;
     const anchorY = 0.86;
 
     const sp = this.worldToScreen(this.posX, this.posY);
@@ -1131,11 +1684,9 @@ class SimpleSim {
 
     ctx.save();
     ctx.translate(sp.x, sp.y + bob);
-    if (facingLeft) ctx.scale(-1, 1);
+    if (flipX) ctx.scale(-1, 1);
 
-    // walk: vertical bob + slight tilt (simple)
-    const tilt = moving ? step * 0.085 * (0.35 + 0.65 * walkAmt) : 0;
-    ctx.rotate(tilt);
+    // walk: sprite-sheet only (no extra sway/bob)
 
     const imgX = -drawW / 2;
     const imgY = -drawH * anchorY;
@@ -1188,7 +1739,7 @@ class SimpleSim {
     ctx.restore();
 
     if (this.state === "eat" || this.eatFxT > 0) {
-      const fxX = sp.x + (facingLeft ? -drawW * 0.12 : drawW * 0.12);
+      const fxX = sp.x + (flipX ? -drawW * 0.12 : drawW * 0.12);
       const fxY = sp.y - drawH * 0.92 + bob + Math.sin(this.chewPhase) * (this.tileSize * 0.03 * z);
       let kind = this.lastEatKind || "plant";
       if (this.state === "eat") {

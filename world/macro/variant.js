@@ -109,22 +109,12 @@ export function createRandomVariant({ kind, sex, rng }) {
     return seededInt(rng, 5, 8);
   })();
 
-  const tailCount = (() => {
-    const p = rng();
-    if (p < 0.15) return 0;
-    if (p < 0.7) return 1;
-    if (p < 0.9) return 2;
-    return 3;
-  })();
-
-  const hornCount = hornCountForSex(sex, rng);
-
-  const wingCount = (() => {
-    const p = rng();
-    if (p < 0.72) return 0;
-    if (p < 0.9) return seededInt(rng, 1, 2);
-    return seededInt(rng, 3, 4);
-  })();
+  // Parts (horn/wing/tail) are disabled in the main game:
+  // - Birds are represented by dedicated design IDs (taxon = bird) instead of dynamic wings.
+  // - Horns/tails are not attached or evolved.
+  const tailCount = 0;
+  const hornCount = 0;
+  const wingCount = 0;
 
   return {
     flip: rng() < 0.5,
@@ -252,9 +242,10 @@ export function createChildVariant({ fatherVariant, motherVariant, sex, kind, di
 
   const limbCount = clampInt(Math.round(avg(vA?.limbCount, vB?.limbCount, 4) + jitter(1.1)), 2, 10);
   const eyeCount = clampInt(Math.round(avg(vA?.eyeCount, vB?.eyeCount, 1) + jitter(1.25)), 0, 8);
-  const tailCount = clampInt(Math.round(avg(vA?.tailCount, vB?.tailCount, 1) + jitter(1.0)), 0, 3);
-  const hornCount = clampInt(Math.round(avg(vA?.hornCount, vB?.hornCount, 0) + jitter(1.0)), 0, 3);
-  const wingCount = clampInt(Math.round(avg(vA?.wingCount, vB?.wingCount, 0) + jitter(1.1)), 0, 4);
+  // Parts are disabled (see createRandomVariant above).
+  const tailCount = 0;
+  const hornCount = 0;
+  const wingCount = 0;
 
   const out = {
     flip: Boolean(choose(vA?.flip, vB?.flip, p() < 0.5)),

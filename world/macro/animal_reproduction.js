@@ -38,6 +38,7 @@ export function tryReproduce({
     o.kind !== "plant" &&
     o.kind !== "meat" &&
     !o._dead &&
+    (o.taxon === "bird") === (e.taxon === "bird") &&
     canReachByTerrain(o) &&
     o.lifeStage === "adult" &&
     !o.hasReproduced &&
@@ -130,8 +131,7 @@ export function tryReproduce({
   e.reproSuccessMax = coupleMax;
   mate.reproSuccessMax = coupleMax;
 
-  const wingCount = clampInt(Number(e.variant?.wingCount) || 0, 0, 4);
-  const usesEggs = wingCount > 0;
+  const usesEggs = e.taxon === "bird";
   if (!usesEggs) {
     // Pregnancy: no wings -> mother becomes pregnant, babies spawn after gestation.
     e.pregnant = true;

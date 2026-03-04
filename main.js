@@ -90,6 +90,7 @@ let nnVizInlineEnabled = false;
 let nnVizLastSendMs = 0;
 const NN_VIZ_SEND_INTERVAL_MS = 60;
 let clickCandidate = null;
+let minimapDrag = null;
 
 let macroWorldSize = macroWorldSizeFromPreset(settings.macroMapSize);
 
@@ -120,6 +121,110 @@ canvas.addEventListener("pointerenter", updatePointerFromEvent);
 canvas.addEventListener("pointerleave", () => {
   pointer.inside = false;
 });
+
+function getMacroMinimapRect(viewportW, viewportH) {
+  const ms = MACRO_CONFIG?.minimapSize;
+  if (!ms) return null;
+  const w = Math.max(1, Math.floor(Number(ms.width) || 1));
+  const h = Math.max(1, Math.floor(Number(ms.height) || 1));
+  const pad = 14;
+  const bottomUiOffset = 52; // keep in sync with render.js drawMinimap
+  const x0 = viewportW - w - pad;
+  const y0 = viewportH - h - pad - bottomUiOffset;
+  return { x0, y0, w, h };
+}
+
+function isInsideRect(x, y, rect) {
+  if (!rect) return false;
+  return x >= rect.x0 && x <= rect.x0 + rect.w && y >= rect.y0 && y <= rect.y0 + rect.h;
+}
+
+function centerMacroCameraFromMinimapScreen(sx, sy, mmRect, { clampToMinimap = true } = {}) {
+  if (!mmRect) return;
+  const ww = macroWorld?._world?.width ?? macroWorldSize?.width ?? 1;
+  const wh = macroWorld?._world?.height ?? macroWorldSize?.height ?? 1;
+  const scaleX = mmRect.w / Math.max(1, ww);
+  const scaleY = mmRect.h / Math.max(1, wh);
+  const mx = clampToMinimap ? clampNumber(sx - mmRect.x0, 0, mmRect.w) : sx - mmRect.x0;
+  const my = clampToMinimap ? clampNumber(sy - mmRect.y0, 0, mmRect.h) : sy - mmRect.y0;
+  const wx = mx / Math.max(1e-6, scaleX);
+  const wy = my / Math.max(1e-6, scaleY);
+  macroCamera.centerOn(wx, wy);
+}
+
+// Minimap tap/drag to move camera (mouse + iPad touch). Use capture phase so CameraInput doesn't steal the gesture.
+canvas.addEventListener(
+  "pointerdown",
+  (e) => {
+    if (viewMode !== "macro") return;
+    if (e.pointerType === "touch" && !e.isPrimary) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const mm = getMacroMinimapRect(rect.width, rect.height);
+    if (!isInsideRect(sx, sy, mm)) return;
+
+    if (autoObserveEnabled) {
+      autoObserveEnabled = false;
+      autoObserveTargetId = null;
+    }
+
+    minimapDrag = { id: e.pointerId };
+    centerMacroCameraFromMinimapScreen(sx, sy, mm);
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  },
+  { capture: true },
+);
+
+canvas.addEventListener(
+  "pointermove",
+  (e) => {
+    if (viewMode !== "macro") return;
+    if (!minimapDrag || minimapDrag.id !== e.pointerId) return;
+    const rect = canvas.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const mm = getMacroMinimapRect(rect.width, rect.height);
+    centerMacroCameraFromMinimapScreen(sx, sy, mm);
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  },
+  { capture: true },
+);
+
+canvas.addEventListener(
+  "pointerup",
+  (e) => {
+    if (!minimapDrag || minimapDrag.id !== e.pointerId) return;
+    minimapDrag = null;
+    try {
+      canvas.releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  },
+  { capture: true },
+);
+
+canvas.addEventListener(
+  "pointercancel",
+  (e) => {
+    if (!minimapDrag || minimapDrag.id !== e.pointerId) return;
+    minimapDrag = null;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  },
+  { capture: true },
+);
 
 function isNnVizEligibleEntity(e) {
   if (!e || e._dead) return false;

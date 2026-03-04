@@ -209,7 +209,7 @@ export function stepTerritoryPaint({ world, territory, entities, dt, tile, w, h 
     const cx = Math.floor(px / tile);
     const cy = Math.floor(py / tile);
 
-    const wingless = (Number(e.variant?.wingCount) || 0) <= 0;
+    const groundBound = e.taxon !== "bird";
 
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
@@ -218,7 +218,7 @@ export function stepTerritoryPaint({ world, territory, entities, dt, tile, w, h 
         const tileIdx = ty * tw + tx;
 
         if (territory.plantMask[tileIdx]) continue;
-        if (wingless && hasElevation) {
+        if (groundBound && hasElevation) {
           const hm = Number(world.getElevationAtTile(tx, ty)) || 0;
           if (hm > winglessMax) continue;
         }

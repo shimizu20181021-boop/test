@@ -46,7 +46,6 @@ import {
   createDietCoatStyle,
   createRandomVariant,
   ensureVariantBases,
-  hornCountForSex,
   refreshVariantBases,
 } from "./macro/variant.js";
 import { blendGenomes, cloneGenome, createRandomGenome } from "./macro/genome.js";
@@ -124,19 +123,49 @@ function calendarFromElapsedSeconds(elapsedSeconds) {
 }
 
 const CREATURE_DESIGN_IDS_BY_DIET = {
-  herbivore: ["herb_pig", "herb_horse", "herb_zebra"],
-  omnivore: ["omn_mouse", "omn_boar", "omn_bear"],
-  carnivore: ["pred_wolf", "pred_cat", "pred_raccoon", "pred_lion"],
+  herbivore: { mammal: ["herb_pig", "herb_horse", "herb_zebra"], bird: ["herb_pigeon"] },
+  omnivore: { mammal: ["omn_mouse", "omn_boar", "omn_bear"], bird: ["omn_crow"] },
+  carnivore: { mammal: ["pred_wolf", "pred_cat", "pred_raccoon", "pred_lion"], bird: ["pred_owl"] },
 };
 
-function designIdsForDietType(dietType) {
-  const key = String(dietType || "").toLowerCase();
-  if (key === "herbivore" || key === "omnivore" || key === "carnivore") return CREATURE_DESIGN_IDS_BY_DIET[key];
-  return CREATURE_DESIGN_IDS_BY_DIET.herbivore;
+const CREATURE_TAXON = { mammal: "mammal", bird: "bird" };
+const BIRD_DESIGN_ID_SET = new Set(["herb_pigeon", "omn_crow", "pred_owl"]);
+function taxonFromDesignId(designId) {
+  const id = String(designId || "");
+  return BIRD_DESIGN_ID_SET.has(id) ? CREATURE_TAXON.bird : CREATURE_TAXON.mammal;
 }
 
-function pickGroupDesignId(dietType, rng) {
-  const list = designIdsForDietType(dietType);
+function isAdultAnimal(e) {
+  if (!e || e._dead) return false;
+  if (isMacroNonAnimalKind(e.kind)) return false;
+  return e.lifeStage === "adult";
+}
+
+function pickReincarnationSpawnTaxon(entities, rng) {
+  let birdAdults = 0;
+  let mammalAdults = 0;
+  for (const e of entities) {
+    if (!isAdultAnimal(e)) continue;
+    const t = e.taxon === CREATURE_TAXON.bird || e.taxon === CREATURE_TAXON.mammal ? e.taxon : taxonFromDesignId(e.designId);
+    if (t === CREATURE_TAXON.bird) birdAdults++;
+    else mammalAdults++;
+  }
+  if (birdAdults < mammalAdults) return CREATURE_TAXON.bird;
+  if (mammalAdults < birdAdults) return CREATURE_TAXON.mammal;
+  const r = typeof rng === "function" ? rng() : Math.random();
+  return r < 0.5 ? CREATURE_TAXON.bird : CREATURE_TAXON.mammal;
+}
+
+function designIdsForDietType(dietType, taxon) {
+  const key = String(dietType || "").toLowerCase();
+  const group = key === "herbivore" || key === "omnivore" || key === "carnivore" ? CREATURE_DESIGN_IDS_BY_DIET[key] : CREATURE_DESIGN_IDS_BY_DIET.herbivore;
+  const t = String(taxon || "").toLowerCase();
+  if (t === CREATURE_TAXON.bird || t === CREATURE_TAXON.mammal) return group[t] || group.mammal;
+  return group.mammal;
+}
+
+function pickGroupDesignId(dietType, taxon, rng) {
+  const list = designIdsForDietType(dietType, taxon);
   if (!list?.length) return "herb_pig";
   const idx = seededInt(typeof rng === "function" ? rng : Math.random, 0, list.length - 1);
   return list[idx] || list[0] || "herb_pig";
@@ -397,12 +426,12 @@ export class MacroWorld {
     this._groupCreatureDesignId = new Map();
   }
 
-  _getOrAssignGroupDesignId(groupId, dietType, rng) {
+  _getOrAssignGroupDesignId(groupId, dietType, taxon, rng) {
     const gid = String(groupId || "");
-    if (!gid) return pickGroupDesignId(dietType, rng);
+    if (!gid) return pickGroupDesignId(dietType, taxon, rng);
     const existing = this._groupCreatureDesignId.get(gid);
     if (existing) return existing;
-    const picked = pickGroupDesignId(dietType, rng);
+    const picked = pickGroupDesignId(dietType, taxon, rng);
     this._groupCreatureDesignId.set(gid, picked);
     return picked;
   }
@@ -597,7 +626,7 @@ export class MacroWorld {
     const cx = Math.floor(px / tile);
     const cy = Math.floor(py / tile);
 
-    const wingless = (Number(entity.variant?.wingCount) || 0) <= 0;
+    const groundBound = entity.taxon !== "bird";
 
     let sumLevel = 0;
     let maxLevel = 0;
@@ -609,7 +638,7 @@ export class MacroWorld {
         const ty = ((cy + dy) % th + th) % th;
         const idx = ty * tw + tx;
         if (terr.plantMask && terr.plantMask[idx]) continue;
-        if (wingless && this.getElevationAtTile(tx, ty) > 15) continue;
+        if (groundBound && this.getElevationAtTile(tx, ty) > 15) continue;
         paintableCount++;
         if (terr.owner[idx] !== groupIdx) continue;
         const lvl = terr.level[idx] | 0;
@@ -1064,7 +1093,10 @@ export class MacroWorld {
 
     const variantForSex = (sex) => {
       const v = cloneVariantTemplate(commonVariant);
-      v.hornCount = hornCountForSex(sex, sex === "female" ? femaleRng : maleRng);
+      // Parts (horn/wing/tail) are disabled in the main game.
+      v.hornCount = 0;
+      v.tailCount = 0;
+      v.wingCount = 0;
       if (sex === "female") v.coat = createDietCoatStyle({ sex, dietType: initialDiet, rng: femaleRng });
       else if (sex === "male") v.coat = createDietCoatStyle({ sex, dietType: initialDiet, rng: maleRng });
       else if (kind === "plant") v.coat = createCoatStyle(kind, sex, commonRng);
@@ -1127,7 +1159,8 @@ export class MacroWorld {
     const maleVariant = variantForSex("male");
     const femaleVariant = variantForSex("female");
     const spawnCount = Math.min(sexes.length, remainingAnimals);
-    const designId = this._getOrAssignGroupDesignId(groupId, initialDiet, rng);
+    const spawnTaxon = pickReincarnationSpawnTaxon(this.entities, rng);
+    const designId = this._getOrAssignGroupDesignId(groupId, initialDiet, spawnTaxon, rng);
     for (let i = 0; i < spawnCount; i++) {
       const sex = sexes[i];
       const placed = this._placeNear(center, groupR, 150, 60, seededFloat(rng, 0, Math.PI * 2), seededFloat(rng, 0, 1));
@@ -1144,6 +1177,7 @@ export class MacroWorld {
         genomeOverride: commonGenome,
       });
       e.designId = designId;
+      e.taxon = spawnTaxon;
       if (initialDiet === "herbivore") {
         e.foodPlantEaten = 5;
         e.foodMeatEaten = 0;
@@ -1214,6 +1248,7 @@ export class MacroWorld {
       x,
       y,
       kind,
+      taxon: kind === "plant" || kind === "meat" ? null : CREATURE_TAXON.mammal,
       radius,
       sex,
       groupId,
@@ -1511,10 +1546,18 @@ export class MacroWorld {
     child.attackDamage = scaledAttackDamage(child.attackDamageBase, parentDiet, this.getCarnAttackMul());
     child.hasReproduced = false;
     child.pairedWithId = null;
+
+    const childTaxon =
+      mother?.taxon === CREATURE_TAXON.bird || mother?.taxon === CREATURE_TAXON.mammal
+        ? mother.taxon
+        : father?.taxon === CREATURE_TAXON.bird || father?.taxon === CREATURE_TAXON.mammal
+          ? father.taxon
+          : null;
     child.designId =
       mother?.designId ||
       father?.designId ||
-      this._getOrAssignGroupDesignId(child.groupId, child.dietType, rng);
+      this._getOrAssignGroupDesignId(child.groupId, child.dietType, childTaxon || CREATURE_TAXON.mammal, rng);
+    child.taxon = childTaxon || taxonFromDesignId(child.designId);
     return child;
   }
 

@@ -3,19 +3,86 @@ import { TERRITORY_ALPHA_BY_LEVEL } from "../world/macro/constants.js";
 import { WeatherFx } from "./weather_fx.js";
 
 const MACRO_TILE_ASSETS = {
-  groundGray: "./assets/tiles/macro/ground_gray.png",
-  mountainGray: "./assets/tiles/macro/mountain_gray.png",
-  plantOverlay: "./assets/tiles/macro/overlay_plant.png",
+  grass: [
+    "./assets/tiles/macro/草地_1.png",
+    "./assets/tiles/macro/草地_2.png",
+    "./assets/tiles/macro/草地_3.png",
+    "./assets/tiles/macro/草地_4.png",
+  ],
+  soil: [
+    "./assets/tiles/macro/土_1.png",
+    "./assets/tiles/macro/土_2.png",
+    "./assets/tiles/macro/土_3.png",
+    "./assets/tiles/macro/土_4.png",
+  ],
+  sand: [
+    "./assets/tiles/macro/砂_1.png",
+    "./assets/tiles/macro/砂_2.png",
+    "./assets/tiles/macro/砂_3.png",
+    "./assets/tiles/macro/砂_4.png",
+  ],
+  mountain: {
+    low: "./assets/tiles/macro/山_低.png",
+    mid: "./assets/tiles/macro/山_中.png",
+    high: "./assets/tiles/macro/山_高.png",
+    peak: "./assets/tiles/macro/山頂.png",
+  },
+  mountainStamp: {
+    low: "./assets/tiles/macro/山全体_低.png",
+    mid: "./assets/tiles/macro/山全体_中.png",
+    high: "./assets/tiles/macro/山全体_高.png",
+    peak: "./assets/tiles/macro/山全体_山頂.png",
+  },
+  plantOverlay: ["./assets/tiles/macro/緑_1.png", "./assets/tiles/macro/緑_2.png"],
   territoryMask: "./assets/tiles/macro/mask_territory.png",
 };
 
 const STORYBOOK_CREATURE_ASSET_BASE = "./assets/storybook/creatures_png";
+const MACRO_ANIM_ASSET_BASE = "./assets/アニメーション";
 const SAMPLE_ASSET_BASE = "./assets/sample";
-const SAMPLE_PART_DIR = {
-  horn: `${SAMPLE_ASSET_BASE}/ツノ`,
-  wing: `${SAMPLE_ASSET_BASE}/羽`,
-};
 const SAMPLE_PLANT_DIR = `${SAMPLE_ASSET_BASE}/植物`;
+
+const MOVE_ANIM_FRAME_COUNT = 7;
+const MOVE_ANIM_TARGET_SIZE = 256;
+const MOVE_ANIM_BY_DESIGN = {
+  herb_pig: { dietDir: "草食", species: "豚" },
+  herb_horse: { dietDir: "草食", species: "馬" },
+  herb_zebra: { dietDir: "草食", species: "シマウマ" },
+  herb_pigeon: { dietDir: "草食", species: "ハト" },
+
+  omn_mouse: { dietDir: "雑食", species: "ネズミ" },
+  omn_boar: { dietDir: "雑食", species: "イノシシ" },
+  omn_crow: { dietDir: "雑食", species: "カラス" },
+  pred_raccoon: { dietDir: "雑食", species: "アライグマ" },
+
+  pred_wolf: { dietDir: "肉食", species: "オオカミ" },
+  omn_bear: { dietDir: "肉食", species: "クマ" },
+  pred_owl: { dietDir: "肉食", species: "フクロウ" },
+  pred_lion: { dietDir: "肉食", species: "ライオン" },
+
+  // NOTE: フォルダ上の分類に合わせています（現状：草食/猫）
+  pred_cat: { dietDir: "草食", species: "猫" },
+};
+
+const MOVE_ANIM_STAGE_JP = {
+  baby: "赤ちゃん",
+  child: "子供",
+  young: "若大人",
+  adult: "大人",
+};
+
+function moveAnimSheetUrl(designId, sex, stage) {
+  const id = String(designId || "");
+  const spec = MOVE_ANIM_BY_DESIGN[id];
+  if (!spec) return "";
+  const sexJp = String(sex || "male") === "female" ? "雌" : "雄";
+  const stageKey = String(stage || "adult");
+  const stageJp = MOVE_ANIM_STAGE_JP[stageKey] || MOVE_ANIM_STAGE_JP.adult;
+  const sp = String(spec.species || "");
+  const dd = String(spec.dietDir || "");
+  if (!sp || !dd) return "";
+  return `${MACRO_ANIM_ASSET_BASE}/${dd}/${sp}/移動/${sp}${sexJp}_${stageJp}.png`;
+}
 
 const _imageAssetCache = new Map();
 function getImageAsset(url) {
@@ -45,6 +112,82 @@ function getImageAsset(url) {
   img.src = u;
 
   return null;
+}
+
+function clampInt(value, min, max) {
+  const n = Math.trunc(Number(value));
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, n));
+}
+
+function wrapDeltaScalar(from, to, span) {
+  const s = Number(span) || 0;
+  if (s <= 0) return (Number(to) || 0) - (Number(from) || 0);
+  const half = s / 2;
+  const raw = (Number(to) || 0) - (Number(from) || 0);
+  return ((((raw + half) % s) + s) % s) - half;
+}
+
+const _macroMotionCache = new Map(); // id -> { x, y, facing, phase, seenAt }
+function getMacroMotionState(macro, timeSeconds, dtSeconds, macroWorld, tileSize) {
+  const id = macro?.id;
+  if (id == null) return { moving: false, facing: -1, phase01: 0 };
+  const key = Number(id);
+  const nowX = Number(macro?.x) || 0;
+  const nowY = Number(macro?.y) || 0;
+  const nowT = Number(timeSeconds) || 0;
+  const dt = Math.max(0, Number(dtSeconds) || 0);
+  const tile = Math.max(1, Number(tileSize) || 64);
+
+  let st = _macroMotionCache.get(key);
+  if (!st) {
+    st = {
+      x: nowX,
+      y: nowY,
+      facing: -1,
+      phase: (((key * 0.61803398875) % 1) * Math.PI * 2) % (Math.PI * 2),
+      seenAt: nowT,
+    };
+    _macroMotionCache.set(key, st);
+    return { moving: false, facing: st.facing, phase01: (st.phase / (Math.PI * 2)) % 1 };
+  }
+
+  const w = Number(macroWorld?._world?.width) || 0;
+  const h = Number(macroWorld?._world?.height) || 0;
+  const dx = wrapDeltaScalar(st.x, nowX, w);
+  const dy = wrapDeltaScalar(st.y, nowY, h);
+  st.x = nowX;
+  st.y = nowY;
+  st.seenAt = nowT;
+
+  const dist = Math.hypot(dx, dy);
+  const speed = dist / Math.max(0.0001, dt);
+  const moveSpeedEps = tile * 0.12; // ignore tiny jitter so "rest" uses the idle sprite
+  const faceEps = Math.max(0.25, tile * 0.003);
+  const moving = dt > 0 && speed > moveSpeedEps;
+  if (moving) {
+    if (dx > faceEps) st.facing = 1;
+    else if (dx < -faceEps) st.facing = -1;
+
+    const baseSpeed = tile * 0.7;
+    const rate = clamp(speed / Math.max(1, baseSpeed), 0.65, 2.6);
+    st.phase = (st.phase + dt * rate * Math.PI * 2) % (Math.PI * 2);
+  }
+
+  return {
+    moving,
+    facing: Number(st.facing) > 0 ? 1 : -1,
+    phase01: (Number(st.phase) / (Math.PI * 2)) % 1,
+  };
+}
+
+function cleanupMacroMotionCache(timeSeconds, keepSeconds = 15) {
+  const nowT = Number(timeSeconds) || 0;
+  const keep = Math.max(1, Number(keepSeconds) || 15);
+  for (const [id, st] of _macroMotionCache) {
+    const seenAt = Number(st?.seenAt) || 0;
+    if (nowT - seenAt > keep) _macroMotionCache.delete(id);
+  }
 }
 
 const _keyedDrawableCache = new Map();
@@ -123,6 +266,625 @@ function getKeyedDrawableAsset(url, { bgThreshold = 210, chromaThreshold = 18 } 
 
   ctx.putImageData(im, 0, 0);
   _keyedDrawableCache.set(key, canvas);
+  return canvas;
+}
+
+const _spriteSheetFramesCache = new Map();
+function getSpriteSheetFramesAsset(
+  url,
+  {
+    frameCount = MOVE_ANIM_FRAME_COUNT,
+    targetSize = MOVE_ANIM_TARGET_SIZE,
+    alphaThreshold = 8,
+    paddingPct = 0.12,
+    bgMaxThreshold = 12,
+    chromaThreshold = 18,
+    searchRadiusPx = 260,
+    splitMode = "auto", // "auto" | "equal"
+  } = {},
+) {
+  const u = String(url || "");
+  if (!u) return null;
+
+  const fc = clampInt(frameCount, 1, 16);
+  const ts = clampInt(targetSize, 0, 1024);
+  const aThr = clampInt(alphaThreshold, 0, 255);
+  const padPct = clamp(Number(paddingPct) || 0, 0, 0.5);
+  const bgMax = clampInt(bgMaxThreshold, 0, 255);
+  const chroma = clampInt(chromaThreshold, 0, 255);
+  const sr = clampInt(searchRadiusPx, 40, 2000);
+  const mode = String(splitMode) === "equal" ? "equal" : "auto";
+
+  const key = `${u}|fc=${fc}|ts=${ts}|a=${aThr}|pad=${padPct}|bgMax=${bgMax}|ch=${chroma}|sr=${sr}|m=${mode}`;
+  const existing = _spriteSheetFramesCache.get(key);
+  if (existing) {
+    if (existing.ready) return existing.value;
+    if (existing.error) return null;
+  } else {
+    _spriteSheetFramesCache.set(key, { ready: false, error: false, processing: false, value: null });
+  }
+  const entry = _spriteSheetFramesCache.get(key);
+  if (!entry || entry.processing) return null;
+
+  const img = getImageAsset(u);
+  if (!img) return null;
+  if (typeof document === "undefined") return null;
+
+  const sw = img.naturalWidth || img.width || 0;
+  const sh = img.naturalHeight || img.height || 0;
+  if (!(sw > 0 && sh > 0)) return null;
+
+  entry.processing = true;
+  try {
+    const tmp = document.createElement("canvas");
+    tmp.width = sw;
+    tmp.height = sh;
+    const tctx = tmp.getContext("2d", { willReadFrequently: true });
+    if (!tctx) throw new Error("no 2d ctx");
+
+    tctx.clearRect(0, 0, sw, sh);
+    tctx.drawImage(img, 0, 0, sw, sh);
+
+    const im = tctx.getImageData(0, 0, sw, sh);
+    const d = im.data;
+    const pxCount = sw * sh;
+
+    const darkKey = () => {
+      const seen = new Uint8Array(pxCount);
+      const queue = [];
+      queue.length = 0;
+
+      const isCandidate = (p0) => {
+        const i = p0 * 4;
+        const a = d[i + 3];
+        if (a <= 0) return false;
+        const r = d[i];
+        const g = d[i + 1];
+        const b = d[i + 2];
+        const max = r > g ? (r > b ? r : b) : g > b ? g : b;
+        if (max > bgMax) return false;
+        const min = r < g ? (r < b ? r : b) : g < b ? g : b;
+        const c = max - min;
+        return c <= chroma;
+      };
+
+      const pushIf = (p0) => {
+        if (p0 < 0 || p0 >= pxCount) return;
+        if (seen[p0]) return;
+        if (!isCandidate(p0)) return;
+        seen[p0] = 1;
+        d[p0 * 4 + 3] = 0;
+        queue.push(p0);
+      };
+
+      // seed edges only
+      for (let x = 0; x < sw; x++) {
+        pushIf(x);
+        pushIf((sh - 1) * sw + x);
+      }
+      for (let y = 1; y < sh - 1; y++) {
+        pushIf(y * sw);
+        pushIf(y * sw + (sw - 1));
+      }
+
+      for (let qi = 0; qi < queue.length; qi++) {
+        const p0 = queue[qi];
+        const x = p0 % sw;
+        const y = (p0 / sw) | 0;
+        if (x > 0) pushIf(p0 - 1);
+        if (x < sw - 1) pushIf(p0 + 1);
+        if (y > 0) pushIf(p0 - sw);
+        if (y < sh - 1) pushIf(p0 + sw);
+      }
+    };
+
+    darkKey();
+
+    // If the background is not dark (gray gradients etc), also key out "bright neutral" background.
+    const shouldBrightKey = (() => {
+      const step = 4;
+      let total = 0;
+      let opaque = 0;
+      const count = (x, y) => {
+        total++;
+        const a = d[(y * sw + x) * 4 + 3];
+        if (a > aThr) opaque++;
+      };
+      for (let x = 0; x < sw; x += step) {
+        count(x, 0);
+        count(x, sh - 1);
+      }
+      for (let y = step; y < sh - step; y += step) {
+        count(0, y);
+        count(sw - 1, y);
+      }
+      const ratio = total > 0 ? opaque / total : 0;
+      return ratio > 0.12;
+    })();
+
+    if (shouldBrightKey) {
+      const bgThreshold = 40;
+      const seen = new Uint8Array(pxCount);
+      const queue = [];
+      queue.length = 0;
+
+      const isCandidate = (p0) => {
+        const i = p0 * 4;
+        const a = d[i + 3];
+        if (a <= 0) return false;
+        const r = d[i];
+        const g = d[i + 1];
+        const b = d[i + 2];
+        const max = r > g ? (r > b ? r : b) : g > b ? g : b;
+        if (max < bgThreshold) return false;
+        const min = r < g ? (r < b ? r : b) : g < b ? g : b;
+        const c = max - min;
+        return c <= chroma;
+      };
+
+      const pushIf = (p0) => {
+        if (p0 < 0 || p0 >= pxCount) return;
+        if (seen[p0]) return;
+        if (!isCandidate(p0)) return;
+        seen[p0] = 1;
+        d[p0 * 4 + 3] = 0;
+        queue.push(p0);
+      };
+
+      // seed edges
+      for (let x = 0; x < sw; x++) {
+        pushIf(x);
+        pushIf((sh - 1) * sw + x);
+      }
+      for (let y = 1; y < sh - 1; y++) {
+        pushIf(y * sw);
+        pushIf(y * sw + (sw - 1));
+      }
+
+      for (let qi = 0; qi < queue.length; qi++) {
+        const p0 = queue[qi];
+        const x = p0 % sw;
+        const y = (p0 / sw) | 0;
+        if (x > 0) pushIf(p0 - 1);
+        if (x < sw - 1) pushIf(p0 + 1);
+        if (y > 0) pushIf(p0 - sw);
+        if (y < sh - 1) pushIf(p0 + sw);
+      }
+    }
+
+    // Apply keyed alpha to the canvas.
+    tctx.putImageData(im, 0, 0);
+
+    const countColumnAlpha = (x) => {
+      const xx = clampInt(x, 0, sw - 1);
+      let c = 0;
+      for (let y = 0; y < sh; y += 2) {
+        const a = d[(y * sw + xx) * 4 + 3];
+        if (a > aThr) c++;
+      }
+      return c;
+    };
+
+    const counts = new Int32Array(sw);
+    for (let x = 0; x < sw; x++) counts[x] = countColumnAlpha(x);
+
+    const smoothRadius = 2;
+    const smooth = new Int32Array(sw);
+    for (let x = 0; x < sw; x++) {
+      let sum = 0;
+      const start = Math.max(0, x - smoothRadius);
+      const end = Math.min(sw - 1, x + smoothRadius);
+      for (let i = start; i <= end; i++) sum += counts[i];
+      smooth[x] = sum;
+    }
+
+    const findMinIdx = (start, end) => {
+      let best = start;
+      let bestV = 2147483647;
+      for (let x = start; x <= end; x++) {
+        const v = smooth[x];
+        if (v < bestV) {
+          bestV = v;
+          best = x;
+        }
+      }
+      return best;
+    };
+
+    const findBestValley = (start, end, center) => {
+      let best = -1;
+      let bestV = 2147483647;
+      let bestDist = 2147483647;
+      for (let x = start + 1; x <= end - 1; x++) {
+        const v = smooth[x];
+        if (v <= smooth[x - 1] && v <= smooth[x + 1]) {
+          const dist = Math.abs(x - center) | 0;
+          if (v < bestV || (v === bestV && dist < bestDist)) {
+            best = x;
+            bestV = v;
+            bestDist = dist;
+          }
+        }
+      }
+      if (best >= 0) return best;
+      return findMinIdx(start, end);
+    };
+
+    const getCutsEqual = () => {
+      const cuts = [];
+      for (let i = 1; i < fc; i++) {
+        const boundary = Math.round((sw * i) / fc);
+        cuts.push(boundary - 1);
+      }
+      for (let i = 0; i < cuts.length; i++) {
+        const min = i === 0 ? 5 : cuts[i - 1] + 10;
+        const max = sw - 6;
+        cuts[i] = clampInt(cuts[i], min, max);
+      }
+      return cuts.map((x) => clampInt(x, 0, sw - 2));
+    };
+
+    const getCutsAuto = () => {
+      if (!(fc >= 2)) return [];
+      const cuts = [];
+      let prev = 0;
+      for (let i = 1; i < fc; i++) {
+        const center = Math.round((sw * i) / fc);
+        const start = clampInt(center - sr, prev + 10, sw - 2);
+        const end = clampInt(center + sr, start + 10, sw - 2);
+        const cut = findBestValley(start, end, center);
+        cuts.push(cut);
+        prev = cut;
+      }
+      for (let i = 0; i < cuts.length; i++) {
+        const min = i === 0 ? 5 : cuts[i - 1] + 10;
+        const max = sw - 6;
+        cuts[i] = clampInt(cuts[i], min, max);
+      }
+      return cuts;
+    };
+
+    const cuts = mode === "equal" ? getCutsEqual() : getCutsAuto();
+    const useCuts = Array.isArray(cuts) && cuts.length === fc - 1 ? cuts : getCutsEqual();
+
+    const segments = [];
+    let segX0 = 0;
+    for (let i = 0; i < fc; i++) {
+      const segX1 = i === fc - 1 ? sw - 1 : clampInt(useCuts[i], segX0, sw - 2);
+      segments.push({ x0: segX0, x1: segX1 });
+      segX0 = segX1 + 1;
+    }
+
+    const bounds = [];
+    for (let fi = 0; fi < fc; fi++) {
+      const seg = segments[fi];
+      if (!seg) {
+        bounds.push(null);
+        continue;
+      }
+
+      const scanX0 = seg.x0;
+      const scanX1 = seg.x1;
+      let minX = scanX1;
+      let minY = sh - 1;
+      let maxX = scanX0;
+      let maxY = 0;
+      let found = false;
+
+      for (let y = 0; y < sh; y++) {
+        let row = (y * sw + scanX0) * 4;
+        for (let x = scanX0; x <= scanX1; x++) {
+          const a = d[row + 3];
+          if (a > aThr) {
+            found = true;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+          row += 4;
+        }
+      }
+
+      if (!found) bounds.push(null);
+      else bounds.push({ minX, maxX, minY, maxY });
+    }
+
+    const valid = bounds.filter(Boolean);
+    if (!valid.length) {
+      entry.ready = true;
+      entry.value = { frames: new Array(fc).fill(null), frameCount: fc, url: u };
+      return entry.value;
+    }
+
+    const frames = new Array(fc);
+    for (let fi = 0; fi < fc; fi++) {
+      const seg = segments[fi];
+      const b = bounds[fi];
+      if (!seg || !b) {
+        frames[fi] = null;
+        continue;
+      }
+
+      const bw = Math.max(1, b.maxX - b.minX + 1);
+      const bh = Math.max(1, b.maxY - b.minY + 1);
+      const pad = Math.max(0, Math.round(Math.max(bw, bh) * padPct));
+
+      const srcX0 = clampInt(b.minX - pad, seg.x0, seg.x1);
+      const srcX1 = clampInt(b.maxX + pad, seg.x0, seg.x1);
+      const srcY0 = clampInt(b.minY - pad, 0, sh - 1);
+      const srcY1 = clampInt(b.maxY + pad, 0, sh - 1);
+
+      const cropW = Math.max(1, srcX1 - srcX0 + 1);
+      const cropH = Math.max(1, srcY1 - srcY0 + 1);
+
+      const c = document.createElement("canvas");
+      const dstSize = ts > 0 ? ts : cropW;
+      c.width = dstSize;
+      c.height = ts > 0 ? ts : cropH;
+      const cctx = c.getContext("2d");
+      if (!cctx) {
+        frames[fi] = c;
+        continue;
+      }
+      cctx.clearRect(0, 0, c.width, c.height);
+
+      if (ts > 0) {
+        const outerPad = Math.round(dstSize * 0.04);
+        const availW = Math.max(1, dstSize - 2 * outerPad);
+        const availH = Math.max(1, dstSize - 2 * outerPad);
+        const scale = Math.max(0.0001, Math.min(availW / cropW, availH / cropH));
+        const dw = Math.max(1, Math.round(cropW * scale));
+        const dh = Math.max(1, Math.round(cropH * scale));
+        const dx = Math.round((dstSize - dw) / 2);
+        const dy = Math.round((dstSize - dh) / 2);
+        cctx.drawImage(tmp, srcX0, srcY0, cropW, cropH, dx, dy, dw, dh);
+      } else {
+        cctx.drawImage(tmp, srcX0, srcY0, cropW, cropH, 0, 0, cropW, cropH);
+      }
+
+      frames[fi] = c;
+    }
+
+    entry.ready = true;
+    entry.value = { frames, frameCount: fc, url: u };
+    return entry.value;
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(err);
+    entry.error = true;
+    entry.ready = true;
+    entry.value = null;
+    return null;
+  } finally {
+    entry.processing = false;
+  }
+}
+
+const _trimmedSpriteCache = new Map();
+function getTrimmedSquareSpriteAsset(
+  url,
+  { targetSize = MOVE_ANIM_TARGET_SIZE, alphaThreshold = 8, paddingPct = 0.12 } = {},
+) {
+  const u = String(url || "");
+  if (!u) return null;
+  const ts = clampInt(targetSize, 32, 2048);
+  const aThr = clampInt(alphaThreshold, 0, 255);
+  const padPct = clamp(Number(paddingPct) || 0, 0, 0.5);
+  const key = `${u}|ts=${ts}|a=${aThr}|pad=${padPct}`;
+  const cached = _trimmedSpriteCache.get(key);
+  if (cached) return cached;
+
+  const img = getImageAsset(u);
+  if (!img) return null;
+  if (typeof document === "undefined") return img;
+
+  const w = img.naturalWidth || img.width || 0;
+  const h = img.naturalHeight || img.height || 0;
+  if (!(w > 0 && h > 0)) return null;
+
+  const tmp = document.createElement("canvas");
+  tmp.width = w;
+  tmp.height = h;
+  const tctx = tmp.getContext("2d", { willReadFrequently: true });
+  if (!tctx) return img;
+
+  tctx.clearRect(0, 0, w, h);
+  tctx.drawImage(img, 0, 0, w, h);
+
+  const im = tctx.getImageData(0, 0, w, h);
+  const d = im.data;
+
+  let minX = w - 1;
+  let minY = h - 1;
+  let maxX = 0;
+  let maxY = 0;
+  let found = false;
+
+  const step = 2;
+  for (let y = 0; y < h; y += step) {
+    let row = (y * w) * 4;
+    for (let x = 0; x < w; x += step) {
+      const a = d[row + x * 4 + 3];
+      if (a > aThr) {
+        found = true;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (!found) {
+    _trimmedSpriteCache.set(key, img);
+    return img;
+  }
+
+  minX = clampInt(minX - step, 0, w - 1);
+  minY = clampInt(minY - step, 0, h - 1);
+  maxX = clampInt(maxX + step, 0, w - 1);
+  maxY = clampInt(maxY + step, 0, h - 1);
+
+  const bw = Math.max(1, maxX - minX + 1);
+  const bh = Math.max(1, maxY - minY + 1);
+  const pad = Math.max(0, Math.round(Math.max(bw, bh) * padPct));
+
+  const srcX = clampInt(minX - pad, 0, w - 1);
+  const srcY = clampInt(minY - pad, 0, h - 1);
+  const srcX2 = clampInt(maxX + pad, 0, w - 1);
+  const srcY2 = clampInt(maxY + pad, 0, h - 1);
+  const cropW = Math.max(1, srcX2 - srcX + 1);
+  const cropH = Math.max(1, srcY2 - srcY + 1);
+
+  const out = document.createElement("canvas");
+  out.width = ts;
+  out.height = ts;
+  const octx = out.getContext("2d");
+  if (!octx) {
+    _trimmedSpriteCache.set(key, img);
+    return img;
+  }
+  octx.clearRect(0, 0, ts, ts);
+
+  const outerPad = Math.round(ts * 0.04);
+  const availW = Math.max(1, ts - 2 * outerPad);
+  const availH = Math.max(1, ts - 2 * outerPad);
+  const scale = Math.max(0.0001, Math.min(availW / cropW, availH / cropH));
+  const dw = Math.max(1, Math.round(cropW * scale));
+  const dh = Math.max(1, Math.round(cropH * scale));
+  const dx = Math.round((ts - dw) / 2);
+  const dy = Math.round((ts - dh) / 2);
+  octx.drawImage(tmp, srcX, srcY, cropW, cropH, dx, dy, dw, dh);
+
+  _trimmedSpriteCache.set(key, out);
+  return out;
+}
+
+const _mountainStampDrawableCache = new Map();
+function getMountainStampDrawableAsset(url, { tolerance = 56 } = {}) {
+  const u = String(url || "");
+  if (!u) return null;
+  const key = `${u}|tol=${Math.round(Number(tolerance) || 56)}`;
+  const cached = _mountainStampDrawableCache.get(key);
+  if (cached) return cached;
+
+  const img = getImageAsset(u);
+  if (!img) return null;
+  if (typeof document === "undefined") return img;
+
+  const w = img.naturalWidth || img.width || 0;
+  const h = img.naturalHeight || img.height || 0;
+  if (!(w > 0 && h > 0)) return null;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return img;
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+
+  const im = ctx.getImageData(0, 0, w, h);
+  const d = im.data;
+
+  const cs = clamp(Math.round(Math.min(w, h) * 0.04), 4, 32) | 0;
+  const corners = [
+    [0, 0],
+    [w - cs, 0],
+    [0, h - cs],
+    [w - cs, h - cs],
+  ];
+  let br = 0;
+  let bg = 0;
+  let bb = 0;
+  let bn = 0;
+  for (const [x0, y0] of corners) {
+    for (let yy = y0; yy < y0 + cs; yy++) {
+      for (let xx = x0; xx < x0 + cs; xx++) {
+        const i = (yy * w + xx) * 4;
+        const a = d[i + 3];
+        if (a <= 0) continue;
+        br += d[i];
+        bg += d[i + 1];
+        bb += d[i + 2];
+        bn++;
+      }
+    }
+  }
+
+  if (bn <= 0) {
+    _mountainStampDrawableCache.set(key, canvas);
+    return canvas;
+  }
+  br /= bn;
+  bg /= bn;
+  bb /= bn;
+
+  const tol = clamp(Number(tolerance) || 56, 1, 140);
+  const tol2 = tol * tol;
+  const isBg = (idx) => {
+    const p = idx * 4;
+    const a = d[p + 3];
+    if (a <= 0) return false;
+    const dr = d[p] - br;
+    const dg = d[p + 1] - bg;
+    const db = d[p + 2] - bb;
+    return dr * dr + dg * dg + db * db <= tol2;
+  };
+
+  const n = w * h;
+  const visited = new Uint8Array(n);
+  const q = new Int32Array(n);
+  let qh = 0;
+  let qt = 0;
+  const push = (idx) => {
+    if (visited[idx]) return;
+    visited[idx] = 1;
+    q[qt++] = idx;
+  };
+
+  for (let x = 0; x < w; x++) {
+    const t = x;
+    const b = (h - 1) * w + x;
+    if (isBg(t)) push(t);
+    if (isBg(b)) push(b);
+  }
+  for (let y = 0; y < h; y++) {
+    const l = y * w;
+    const r = y * w + (w - 1);
+    if (isBg(l)) push(l);
+    if (isBg(r)) push(r);
+  }
+
+  while (qh < qt) {
+    const idx = q[qh++];
+    const p = idx * 4;
+    d[p] = 0;
+    d[p + 1] = 0;
+    d[p + 2] = 0;
+    d[p + 3] = 0;
+
+    const x = idx % w;
+    const y = (idx / w) | 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      const ny = y + dy;
+      if (ny < 0 || ny >= h) continue;
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx;
+        if (nx < 0 || nx >= w) continue;
+        const ni = ny * w + nx;
+        if (visited[ni]) continue;
+        if (!isBg(ni)) continue;
+        push(ni);
+      }
+    }
+  }
+
+  ctx.putImageData(im, 0, 0);
+  _mountainStampDrawableCache.set(key, canvas);
   return canvas;
 }
 
@@ -966,7 +1728,6 @@ function drawMicroGalaxyAura(ctx, e, { progress = 0, strength = 0.85, timeSecond
 }
 
 function drawMacroTiles(ctx, camera, tileSize, viewW, viewH, macroWorld, weatherFx) {
-  const zoom = Number(camera?.zoom) > 0 ? Number(camera.zoom) : 1;
   const startX = Math.floor(camera.x / tileSize);
   const startY = Math.floor(camera.y / tileSize);
   const endX = Math.ceil((camera.x + viewW) / tileSize);
@@ -976,10 +1737,27 @@ function drawMacroTiles(ctx, camera, tileSize, viewW, viewH, macroWorld, weather
   const edgeAlpha = (diff) => Math.max(0.12, Math.min(0.75, 0.14 + (Math.abs(diff) / 20) * 0.58));
   const hasElevation = Boolean(macroWorld?.getElevationAtTile);
 
-  const groundImg = getImageAsset(MACRO_TILE_ASSETS.groundGray);
-  const mountainImg = getImageAsset(MACRO_TILE_ASSETS.mountainGray);
-  const plantOverlayImg = getImageAsset(MACRO_TILE_ASSETS.plantOverlay);
+  const grassImgs = (Array.isArray(MACRO_TILE_ASSETS.grass) ? MACRO_TILE_ASSETS.grass : []).map(getImageAsset);
+  const soilImgs = (Array.isArray(MACRO_TILE_ASSETS.soil) ? MACRO_TILE_ASSETS.soil : []).map(getImageAsset);
+  const sandImgs = (Array.isArray(MACRO_TILE_ASSETS.sand) ? MACRO_TILE_ASSETS.sand : []).map(getImageAsset);
+  const plantOverlayImgs = (Array.isArray(MACRO_TILE_ASSETS.plantOverlay) ? MACRO_TILE_ASSETS.plantOverlay : []).map(getImageAsset);
   const territoryMaskImg = getImageAsset(MACRO_TILE_ASSETS.territoryMask);
+
+  const mountainTiles = MACRO_TILE_ASSETS.mountain || {};
+  const mountainImgs = {
+    low: getImageAsset(mountainTiles.low),
+    mid: getImageAsset(mountainTiles.mid),
+    high: getImageAsset(mountainTiles.high),
+    peak: getImageAsset(mountainTiles.peak),
+  };
+
+  const mountainStamps = MACRO_TILE_ASSETS.mountainStamp || {};
+  const mountainStampImgs = {
+    low: getMountainStampDrawableAsset(mountainStamps.low, { tolerance: 80 }),
+    mid: getMountainStampDrawableAsset(mountainStamps.mid, { tolerance: 80 }),
+    high: getMountainStampDrawableAsset(mountainStamps.high, { tolerance: 80 }),
+    peak: getMountainStampDrawableAsset(mountainStamps.peak, { tolerance: 80 }),
+  };
 
   const terr = macroWorld?._territoryPaint;
   const terrOwner = terr?.owner;
@@ -998,77 +1776,102 @@ function drawMacroTiles(ctx, camera, tileSize, viewW, viewH, macroWorld, weather
     return ((n % m) + m) % m;
   };
 
+  const biomeToGroundKind = (biomeId) => {
+    // Macro biomes are color-based; map them to "storybook" ground textures (grass/soil/sand).
+    // 0 gray -> soil, 1 desert -> sand, 3 green -> grass, others -> soil.
+    const b = Number(biomeId) | 0;
+    if (b === 1) return "sand";
+    if (b === 3 || b === 4) return "grass";
+    return "soil";
+  };
+
+  const tileHash = (tx, ty, salt) => {
+    const x = (Number(tx) | 0) * 92837111;
+    const y = (Number(ty) | 0) * 689287499;
+    return (x ^ y ^ (salt | 0)) >>> 0;
+  };
+
+  const pickFrom = (imgs, tx, ty, salt) => {
+    const list = Array.isArray(imgs) ? imgs : [];
+    if (!list.length) return null;
+
+    // Reduce "noisy" per-tile randomness: use low-frequency value-noise so nearby tiles tend to share
+    // the same variant (keeps biomes cohesive without obvious grid blocks).
+    const cs = 18; // tiles per noise cell (bigger => more unified)
+    const x = Number(tx) || 0;
+    const y = Number(ty) || 0;
+    const fx = x / cs;
+    const fy = y / cs;
+    const ix0 = Math.floor(fx);
+    const iy0 = Math.floor(fy);
+    const smoothstep01 = (t) => {
+      const v = clamp(Number(t) || 0, 0, 1);
+      return v * v * (3 - 2 * v);
+    };
+    const tx01 = smoothstep01(fx - ix0);
+    const ty01 = smoothstep01(fy - iy0);
+    const h01 = (hx, hy) => (tileHash(hx, hy, salt) & 0xffff) / 0xffff;
+    const v00 = h01(ix0, iy0);
+    const v10 = h01(ix0 + 1, iy0);
+    const v01 = h01(ix0, iy0 + 1);
+    const v11 = h01(ix0 + 1, iy0 + 1);
+    const a = v00 * (1 - tx01) + v10 * tx01;
+    const b = v01 * (1 - tx01) + v11 * tx01;
+    const v = a * (1 - ty01) + b * ty01;
+    const idx = clampInt(Math.floor(v * list.length), 0, list.length - 1);
+    return list[idx] || list.find(Boolean) || null;
+  };
+
+  const groundImgForTile = (tx, ty) => {
+    const biomeId = macroWorld?.getBiomeAtTile ? macroWorld.getBiomeAtTile(tx, ty) : 0;
+    const kind = biomeToGroundKind(biomeId);
+    if (kind === "grass") return pickFrom(grassImgs, tx, ty, 0x13579bdf);
+    if (kind === "sand") return pickFrom(sandImgs, tx, ty, 0x9e3779b9);
+    return pickFrom(soilImgs, tx, ty, 0x2468ace0);
+  };
+
+  const mountainTierForHeight = (hm) => {
+    const h = Number(hm) || 0;
+    if (h < 5) return "low";
+    if (h < 10) return "mid";
+    if (h < 15) return "high";
+    return "peak";
+  };
+
   for (let ty = startY; ty <= endY; ty++) {
     for (let tx = startX; tx <= endX; tx++) {
       const x = tx * tileSize;
       const y = ty * tileSize;
-      const even = (tx + ty) % 2 === 0;
-
       const hm = hasElevation ? Number(macroWorld.getElevationAtTile(tx, ty)) || 0 : 0;
-      if (groundImg || mountainImg) {
-        const baseImg = hm > 0 && mountainImg ? mountainImg : groundImg;
-        if (baseImg) ctx.drawImage(baseImg, x, y, tileSize, tileSize);
-        else {
-          // Fallback (e.g., ground not loaded yet but mountain is): fill with a neutral gray.
-          ctx.fillStyle = "#bdbdbd";
-          ctx.fillRect(x, y, tileSize, tileSize);
-        }
 
-        if (hm > 0) {
-          // Mountains: keep grayscale but preserve texture; slightly darken by height.
+      const groundImg = groundImgForTile(tx, ty);
+      if (groundImg) {
+        ctx.drawImage(groundImg, x, y, tileSize, tileSize);
+      } else {
+        const biomeId = macroWorld?.getBiomeAtTile ? macroWorld.getBiomeAtTile(tx, ty) : 0;
+        const kind = biomeToGroundKind(biomeId);
+        ctx.fillStyle = kind === "grass" ? "#a7d5a6" : kind === "sand" ? "#d6c477" : "#b08a5a";
+        ctx.fillRect(x, y, tileSize, tileSize);
+      }
+
+      // Mountains: overlay per-tile mountain texture based on height.
+      if (hm > 0) {
+        const tier = mountainTierForHeight(hm);
+        const mimg = mountainImgs[tier] || mountainImgs.high || mountainImgs.mid || mountainImgs.low || mountainImgs.peak;
+        if (mimg) {
+          ctx.drawImage(mimg, x, y, tileSize, tileSize);
+        } else {
           const t = Math.max(0, Math.min(1, hm / 20));
-          const base = Math.round(232 - t * 115);
-          const g = Math.max(75, Math.min(245, base));
+          const g = Math.max(75, Math.min(245, Math.round(230 - t * 120)));
           ctx.save();
-          ctx.globalAlpha *= 0.55;
+          ctx.globalAlpha *= 0.35;
           ctx.fillStyle = `rgb(${g},${g},${g})`;
           ctx.fillRect(x, y, tileSize, tileSize);
           ctx.restore();
         }
-      } else {
-        if (hm > 0) {
-          // Mountains are grayscale.
-          const t = Math.max(0, Math.min(1, hm / 20));
-          const base = Math.round(235 - t * 120);
-          const g = Math.max(80, Math.min(245, base));
-          ctx.fillStyle = `rgb(${g},${g},${g})`;
-        } else {
-          // Macro map color: unified gray (no biome palette).
-          ctx.fillStyle = "#bdbdbd";
-        }
-        ctx.fillRect(x, y, tileSize, tileSize);
       }
 
-      // Territory paint overlay (group color). Plant influence tiles remain green (unpaintable).
-      if (hasTerritory) {
-        const xt = wrapTile(tx, terrTw);
-        const yt = wrapTile(ty, terrTh);
-        const idx = yt * terrTw + xt;
-        if (!(terrPlantMask && terrPlantMask[idx])) {
-          const lvl = terrLevel[idx] | 0;
-          if (lvl > 0) {
-            const a = TERRITORY_ALPHA_BY_LEVEL[lvl] ?? 0;
-            const ownerIdx = terrOwner[idx] | 0;
-            if (a > 0 && ownerIdx >= 0) {
-              const rr = terrR[ownerIdx];
-                const gg = terrG[ownerIdx];
-                const bb = terrB[ownerIdx];
-                if (rr != null && gg != null && bb != null) {
-                  const tint = territoryMaskImg ? getTerritoryTintCanvas(rr, gg, bb, territoryMaskImg) : null;
-                  if (tint) {
-                    ctx.save();
-                    ctx.globalAlpha *= a;
-                    ctx.drawImage(tint, x, y, tileSize, tileSize);
-                    ctx.restore();
-                  } else {
-                    ctx.fillStyle = `rgba(${rr},${gg},${bb},${a})`;
-                    ctx.fillRect(x, y, tileSize, tileSize);
-                }
-              }
-            }
-          }
-        }
-      }
+      // Territory paint overlay is drawn after mountain stamps (see below).
 
       // Elevation edges (stronger visual step walls).
       if (hasElevation) {
@@ -1094,109 +1897,129 @@ function drawMacroTiles(ctx, camera, tileSize, viewW, viewH, macroWorld, weather
     }
   }
 
-  // Plant influence shading (green), as in the previous spec.
-  if (macroWorld) {
-    const tiles = new Set();
-    const minX = startX - 1;
-    const minY = startY - 1;
-    const maxX = endX + 1;
-    const maxY = endY + 1;
-
-    for (const e of macroWorld.entities) {
-      if (!e || e._dead) continue;
-      if (e.kind !== "plant") continue;
-      const cx = Math.floor(e.x / tileSize);
-      const cy = Math.floor(e.y / tileSize);
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const tx = cx + dx;
-          const ty = cy + dy;
-          if (tx < minX || tx > maxX || ty < minY || ty > maxY) continue;
-          tiles.add(`${tx},${ty}`);
-        }
-      }
-    }
-
-    if (tiles.size) {
-      ctx.save();
-      ctx.fillStyle = "rgba(67,160,71,0.26)";
-      for (const key of tiles) {
-        const [tx, ty] = key.split(",").map((v) => Number(v));
-        const x = tx * tileSize;
-        const y = ty * tileSize;
-        if (hasElevation) {
-          const hm = Number(macroWorld.getElevationAtTile(tx, ty)) || 0;
-          if (hm > 0) continue;
-        }
-        if (plantOverlayImg) ctx.drawImage(plantOverlayImg, x, y, tileSize, tileSize);
-        else ctx.fillRect(x, y, tileSize, tileSize);
-      }
-      ctx.restore();
-    }
-  }
-
-  if (weatherFx && typeof weatherFx.drawMacroGroundOverlays === "function") {
-    weatherFx.drawMacroGroundOverlays(ctx, macroWorld, { startX, endX, startY, endY, tileSize, hasElevation });
-  }
-
-  ctx.strokeStyle = "rgba(0,0,0,0.06)";
-  ctx.lineWidth = 1 / zoom;
-  for (let ty = startY; ty <= endY; ty++) {
-    const y = ty * tileSize;
-    ctx.beginPath();
-    ctx.moveTo(camera.x, y);
-    ctx.lineTo(camera.x + viewW, y);
-    ctx.stroke();
-  }
-  for (let tx = startX; tx <= endX; tx++) {
-    const x = tx * tileSize;
-    ctx.beginPath();
-    ctx.moveTo(x, camera.y);
-    ctx.lineTo(x, camera.y + viewH);
-    ctx.stroke();
-  }
-
-  // Draw mountain height labels last so they remain readable above the tile grid + overlays.
+  // Mountain stamp overlay (per mountain cluster) to reduce the "cutout" feel at the boundary.
   if (macroWorld?.getMountainLabels) {
     const labels = macroWorld.getMountainLabels();
     if (Array.isArray(labels) && labels.length) {
-      const pad = tileSize * 2.0;
+      const pad = tileSize * 6;
       const left = camera.x - pad;
       const top = camera.y - pad;
       const right = camera.x + viewW + pad;
       const bottom = camera.y + viewH + pad;
 
       ctx.save();
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.strokeStyle = "rgba(255,255,255,0.85)";
-      ctx.fillStyle = "rgba(0,0,0,0.78)";
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
 
       for (const l of labels) {
         if (!l) continue;
         const tx = Number(l.tx);
         const ty = Number(l.ty);
-        const h = Math.round(Number(l.height) || 0);
+        const hm = Number(l.height) || 0;
         if (!Number.isFinite(tx) || !Number.isFinite(ty)) continue;
-        if (!(h > 0)) continue;
+        if (!(hm > 0)) continue;
 
-        const x = (tx + 0.5) * tileSize;
-        const y = (ty + 0.5) * tileSize;
-        if (x < left || x > right || y < top || y > bottom) continue;
+        const rTiles = clamp(Number(l.radiusTiles) || 6, 2, 80);
+        const size = (rTiles * 2 + 6) * tileSize;
+        const cx = (tx + 0.5) * tileSize;
+        const cy = (ty + 0.5) * tileSize;
 
-        const r = Math.max(0, Number(l.radiusTiles) || 6);
-        const fontScreen = Math.max(14, Math.min(44, 16 + r * 1.25));
-        const fontWorld = Math.max(8, Math.round(fontScreen / zoom));
-        ctx.font = `800 ${fontWorld}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
-        ctx.lineWidth = 5 / zoom;
+        if (cx + size * 0.6 < left || cx - size * 0.6 > right || cy + size * 0.6 < top || cy - size * 0.6 > bottom) continue;
 
-        const text = `${h}m`;
-        ctx.strokeText(text, x, y);
-        ctx.fillText(text, x, y);
+        const tier = mountainTierForHeight(hm);
+        const stamp =
+          mountainStampImgs[tier] || mountainStampImgs.high || mountainStampImgs.mid || mountainStampImgs.low || mountainStampImgs.peak;
+        if (!stamp) continue;
+
+        const h01 = clamp(hm / 20, 0, 1);
+        const alpha = 0.96 + 0.04 * h01;
+        const hash = tileHash(tx, ty, 0x6d2b79f5);
+        const flip = (hash & 1) === 1 ? -1 : 1;
+        const rot = (((hash >>> 1) % 9) - 4) * 0.045;
+
+        ctx.save();
+        ctx.translate(cx, cy + size * 0.06);
+        ctx.scale(flip, 1);
+        ctx.rotate(rot);
+        ctx.globalAlpha *= alpha;
+        ctx.drawImage(stamp, -size * 0.5, -size * 0.5, size, size);
+        ctx.globalAlpha *= 0.7;
+        ctx.drawImage(stamp, -size * 0.5, -size * 0.5, size, size);
+        ctx.restore();
+      }
+
+      ctx.restore();
+    }
+  }
+
+  // Plant influence shading (green), as in the previous spec.
+  if (macroWorld) {
+    const hasPlantMask = terrPlantMask instanceof Uint8Array && terrTw > 0 && terrTh > 0;
+    if (hasPlantMask) {
+      ctx.save();
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      for (let ty = startY; ty <= endY; ty++) {
+        for (let tx = startX; tx <= endX; tx++) {
+          const idx = wrapTile(tx, terrTw) + wrapTile(ty, terrTh) * terrTw;
+          if (!terrPlantMask[idx]) continue;
+          const x = tx * tileSize;
+          const y = ty * tileSize;
+          const overlayImg = pickFrom(plantOverlayImgs, tx, ty, 0x2f6e2b1);
+          ctx.globalAlpha = 0.9;
+          if (overlayImg) ctx.drawImage(overlayImg, x, y, tileSize, tileSize);
+          else {
+            ctx.fillStyle = "rgba(67,160,71,0.26)";
+            ctx.fillRect(x, y, tileSize, tileSize);
+          }
+          ctx.globalAlpha = 1;
+        }
       }
       ctx.restore();
     }
   }
+
+  // Territory paint overlay (after mountains + plant influence).
+  if (
+    terrOwner instanceof Int32Array &&
+    terrLevel instanceof Uint8Array &&
+    terrTw > 0 &&
+    terrTh > 0 &&
+    territoryMaskImg &&
+    terrR &&
+    terrG &&
+    terrB
+  ) {
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    for (let ty = startY; ty <= endY; ty++) {
+      for (let tx = startX; tx <= endX; tx++) {
+        const idx = wrapTile(tx, terrTw) + wrapTile(ty, terrTh) * terrTw;
+        if (terrPlantMask && terrPlantMask[idx]) continue;
+        const lvl = terrLevel[idx] | 0;
+        if (lvl <= 0) continue;
+        const owner = terrOwner[idx] | 0;
+        if (owner < 0) continue;
+        const r = terrR?.[owner];
+        const g = terrG?.[owner];
+        const b = terrB?.[owner];
+        if (!(Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b))) continue;
+        const tint = getTerritoryTintCanvas(r, g, b, territoryMaskImg);
+        if (!tint) continue;
+        const a = TERRITORY_ALPHA_BY_LEVEL[lvl] ?? 0.22;
+        ctx.globalAlpha = a;
+        ctx.drawImage(tint, tx * tileSize, ty * tileSize, tileSize, tileSize);
+      }
+    }
+    ctx.restore();
+  }
+
+  if (weatherFx && typeof weatherFx.drawMacroGroundOverlays === "function") {
+    weatherFx.drawMacroGroundOverlays(ctx, macroWorld, { startX, endX, startY, endY, tileSize, hasElevation });
+  }
+
+  // NOTE: Mountain height labels disabled (numbers on mountains are distracting in the storybook style).
 }
 
 function drawMinimap(ctx, macroWorld, camera, minimapSize, viewportW, viewportH) {
@@ -1476,15 +2299,6 @@ function creatureSpriteUrl(designId, sex, stage) {
   return `${STORYBOOK_CREATURE_ASSET_BASE}/${id}/${s}_${st}.png`;
 }
 
-function creaturePartUrl(kind, idx) {
-  const k = String(kind || "");
-  const dir = SAMPLE_PART_DIR[k];
-  if (!dir) return "";
-  const n = Math.max(1, Math.min(3, Math.round(Number(idx) || 1)));
-  const prefix = k === "wing" ? "羽" : "ツノ";
-  return `${dir}/${prefix}${n}.png`;
-}
-
 function plantSpriteUrl(stage, idx) {
   const st = Math.max(0, Math.min(2, Math.round(Number(stage == null ? 2 : stage))));
   if (st === 0) return `${SAMPLE_PLANT_DIR}/芽.png`;
@@ -1504,71 +2318,58 @@ function drawMacroCreatureSprite(ctx, macro, x, y) {
 
   const sex = macro?.sex === "female" ? "female" : "male";
   const stage = spriteStageFromMacro(macro);
-  const url = creatureSpriteUrl(designId, sex, stage);
-  const img = getImageAsset(url);
-  if (!img) return false;
+  const animUrl = moveAnimSheetUrl(designId, sex, stage);
+  const anim = animUrl ? getSpriteSheetFramesAsset(animUrl) : null;
 
-  const { w: iw, h: ih } = drawableSize(img);
+  const motion = macro?._renderMotion || null;
+  const moving = Boolean(motion?.moving);
+  const phase01 = clamp(Number(motion?.phase01) || 0, 0, 1);
+  const facing = Number(motion?.facing) > 0 ? 1 : -1;
+
+  const staticUrl = creatureSpriteUrl(designId, sex, stage);
+  // Trim + square-fit so small sprites (e.g. birds/chicks) don't look tiny when stopped vs moving.
+  const staticDrawable = staticUrl ? getTrimmedSquareSpriteAsset(staticUrl) : null;
+
+  const hasAnim = anim && Array.isArray(anim.frames) && anim.frames.length;
+  const animFrames = hasAnim ? anim.frames : null;
+
+  let drawable = null;
+  if (moving) {
+    // Moving: prefer sprite-sheet.
+    if (animFrames) {
+      const idx = clampInt(Math.floor(phase01 * animFrames.length), 0, animFrames.length - 1);
+      drawable = animFrames[idx] || animFrames[0] || null;
+    }
+    // Fallback: if sprite-sheet not ready yet, show the static sprite.
+    if (!drawable && staticDrawable) drawable = staticDrawable;
+  } else {
+    // Stopped/resting: prefer the static storybook sprite.
+    if (staticDrawable) drawable = staticDrawable;
+    // Fallback: if static isn't loaded yet, show the first sprite-sheet frame (keeps "something" visible).
+    if (!drawable && animFrames) drawable = animFrames[0] || null;
+  }
+
+  if (!drawable) return false;
+
+  const { w: iw, h: ih } = drawableSize(drawable);
   const r = Math.max(1, Number(macro?.radius) || 1);
   const targetH = Math.max(8, r * CREATURE_SPRITE_H_PER_RADIUS);
   const s = targetH / Math.max(1, ih);
   const dw = iw * s;
   const dh = targetH;
 
-  const maturity = maturityFromMacro(macro);
-  const wingGrow = clamp((maturity - 0.15) / 0.85, 0, 1);
-  const hornGrow = clamp((maturity - 0.05) / 0.95, 0, 1);
-
-  const variant = macro?.variant || null;
-  const flip = variant?.flip ? -1 : 1;
-
-  const hornCount = Math.max(0, Math.min(3, Math.round(Number(variant?.hornCount) || 0)));
-  const hornStyle = Math.max(0, Math.min(2, Math.round(Number(variant?.hornStyle) || 0)));
-  const hornScale = clamp(Number(variant?.hornScale) || 1, 0.5, 2.2) * (hornCount > 1 ? 1 + 0.14 * (hornCount - 1) : 1);
-
-  const wingCount = Math.max(0, Math.min(4, Math.round(Number(variant?.wingCount) || 0)));
-  const wingStyle = Math.max(0, Math.min(2, Math.round(Number(variant?.wingStyle) || 0)));
-  const wingScaleBase = clamp(Number(variant?.wingScale) || 1, 0.5, 2.6);
-  const wingScale = wingScaleBase * (wingCount > 1 ? 1 + 0.12 * (wingCount - 1) : 1) * wingGrow;
-
   ctx.save();
   ctx.translate(x, y);
   const pregT = macro?.pregnant ? clamp((Number(macro?.pregnancySeconds) || 0) / 30, 0, 1) : 0;
   const pregScaleX = 1 + 0.14 * pregT;
   const pregScaleY = 1 + 0.08 * pregT;
+  // Base sprites face LEFT by default. Flip horizontally when facing to the RIGHT.
+  const flip = facing > 0 ? -1 : 1;
   ctx.scale(flip * pregScaleX, pregScaleY);
 
   const leftX = -dw * 0.5;
   const topY = -dh * CREATURE_SPRITE_ANCHOR_Y;
-
-  // Wings behind the body.
-  if (wingCount > 0 && wingGrow > 0.02) {
-    const wingDrawable = getKeyedDrawableAsset(creaturePartUrl("wing", wingStyle + 1));
-    if (wingDrawable) {
-      drawOverlayPart2d(ctx, wingDrawable, {
-        cx: leftX + dw * 0.70,
-        cy: topY + dh * 0.18,
-        width: dw * 0.62 * wingScale,
-        alpha: 0.62 + 0.22 * maturity,
-      });
-    }
-  }
-
-  // Base creature.
-  ctx.drawImage(img, leftX, topY, dw, dh);
-
-  // Horns in front.
-  if (hornCount > 0 && hornGrow > 0.02) {
-    const hornDrawable = getKeyedDrawableAsset(creaturePartUrl("horn", hornStyle + 1));
-    if (hornDrawable) {
-      drawOverlayPart2d(ctx, hornDrawable, {
-        cx: leftX + dw * 0.34,
-        cy: topY + dh * 0.14,
-        width: dw * 0.86 * hornScale * (0.6 + 0.4 * hornGrow),
-        alpha: 0.92,
-      });
-    }
-  }
+  ctx.drawImage(drawable, leftX, topY, dw, dh);
 
   ctx.restore();
   return true;
@@ -2407,7 +3208,7 @@ function drawMacroStats(ctx, macro, x, y) {
   ctx.restore();
 }
 
-function drawMacroEntity(ctx, macro) {
+function drawMacroEntity(ctx, macro, { timeSeconds = 0, dtSeconds = 0, macroWorld = null, tileSize = 64 } = {}) {
   const { x, y, radius, kind } = macro;
   const eatT = macro?.eatFxSeconds ?? 0;
   const bounce = eatT > 0 ? Math.sin(clamp(1 - eatT / 0.45, 0, 1) * Math.PI) * radius * 0.22 : 0;
@@ -2444,6 +3245,9 @@ function drawMacroEntity(ctx, macro) {
     return;
   }
 
+  // Render-only motion state (for sprite-sheet animation).
+  macro._renderMotion = getMacroMotionState(macro, timeSeconds, dtSeconds, macroWorld, tileSize);
+
   const maturity = maturityFromMacro(macro);
   let v = macro.variant;
   if (macro.pregnant && v) {
@@ -2459,20 +3263,20 @@ function drawMacroEntity(ctx, macro) {
   if (kind === "largeHerbivore") {
     const drew = drawMacroCreatureSprite(ctx, macro, x, yy);
     if (!drew) {
-      const vNoTail = v ? { ...v, tailCount: 0 } : v;
-      drawMacroHerbivore(ctx, x, yy, radius, true, macro.sex, vNoTail, maturity);
+      const vNoParts = v ? { ...v, tailCount: 0, hornCount: 0, wingCount: 0 } : v;
+      drawMacroHerbivore(ctx, x, yy, radius, true, macro.sex, vNoParts, maturity);
     }
   } else if (kind === "smallHerbivore") {
     const drew = drawMacroCreatureSprite(ctx, macro, x, yy);
     if (!drew) {
-      const vNoTail = v ? { ...v, tailCount: 0 } : v;
-      drawMacroHerbivore(ctx, x, yy, radius, false, macro.sex, vNoTail, maturity);
+      const vNoParts = v ? { ...v, tailCount: 0, hornCount: 0, wingCount: 0 } : v;
+      drawMacroHerbivore(ctx, x, yy, radius, false, macro.sex, vNoParts, maturity);
     }
   } else {
     const drew = drawMacroCreatureSprite(ctx, macro, x, yy);
     if (!drew) {
-      const vNoTail = v ? { ...v, tailCount: 0 } : v;
-      drawMacroPredator(ctx, x, yy, radius, macro.sex, vNoTail, maturity);
+      const vNoParts = v ? { ...v, tailCount: 0, hornCount: 0, wingCount: 0 } : v;
+      drawMacroPredator(ctx, x, yy, radius, macro.sex, vNoParts, maturity);
     }
   }
 
@@ -2518,6 +3322,7 @@ export class Renderer {
     this._microPairsCache = { pairs: [], lastAt: 0, lastKey: "" };
     this._weatherFx = new WeatherFx();
     this._lastRenderAtSeconds = null;
+    this._macroMotionCleanupAtSeconds = 0;
   }
 
   resizeToDisplaySize() {
@@ -2613,8 +3418,14 @@ export class Renderer {
         const isAnimal = kind === "largeHerbivore" || kind === "smallHerbivore" || kind === "predator";
         (isAnimal ? animals : others).push(m);
       }
-      for (const m of others) drawMacroEntity(ctx, m);
-      for (const m of animals) drawMacroEntity(ctx, m);
+      const dtAnim = paused ? 0 : dtSeconds;
+      const drawOpts = { timeSeconds, dtSeconds: dtAnim, macroWorld, tileSize };
+      for (const m of others) drawMacroEntity(ctx, m, drawOpts);
+      for (const m of animals) drawMacroEntity(ctx, m, drawOpts);
+      if (timeSeconds - (this._macroMotionCleanupAtSeconds ?? 0) > 2) {
+        cleanupMacroMotionCache(timeSeconds, 15);
+        this._macroMotionCleanupAtSeconds = timeSeconds;
+      }
 
       if (this._weatherFx && typeof this._weatherFx.drawMacroWorldOverlay === "function") {
         this._weatherFx.drawMacroWorldOverlay(ctx);
