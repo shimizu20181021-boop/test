@@ -12,9 +12,9 @@ const DESIGNS = [
   { id: "omn_mouse", label: "雑食（ネズミ）" },
   { id: "omn_boar", label: "雑食（イノシシ）" },
   { id: "omn_crow", label: "雑食（カラス）" },
-  { id: "omn_bear", label: "雑食（クマ）" },
+  { id: "omn_cat", label: "雑食（ネコ）" },
   { id: "pred_wolf", label: "肉食（オオカミ）" },
-  { id: "pred_cat", label: "肉食（ネコ）" },
+  { id: "pred_bear", label: "肉食（クマ）" },
   { id: "pred_raccoon", label: "肉食（アライグマ）" },
   { id: "pred_lion", label: "肉食（ライオン）" },
   { id: "pred_owl", label: "肉食（フクロウ）" },
@@ -36,15 +36,13 @@ const MOVE_ANIM_BY_DESIGN = {
   omn_mouse: { dietDir: "雑食", species: "ネズミ" },
   omn_boar: { dietDir: "雑食", species: "イノシシ" },
   omn_crow: { dietDir: "雑食", species: "カラス" },
+  omn_cat: { dietDir: "草食", species: "猫" },
   pred_raccoon: { dietDir: "雑食", species: "アライグマ" },
 
   pred_wolf: { dietDir: "肉食", species: "オオカミ" },
-  omn_bear: { dietDir: "肉食", species: "クマ" },
+  pred_bear: { dietDir: "肉食", species: "クマ" },
   pred_owl: { dietDir: "肉食", species: "フクロウ" },
   pred_lion: { dietDir: "肉食", species: "ライオン" },
-
-  // NOTE: フォルダ上の分類に合わせています（現状：草食/猫）
-  pred_cat: { dietDir: "草食", species: "猫" },
 };
 
 const STAGE_JP = {
@@ -52,6 +50,14 @@ const STAGE_JP = {
   child: "子供",
   young: "若大人",
   adult: "大人",
+};
+
+// 攻撃アニメ（現状はライオンのみ）
+const ATTACK_ANIM_BY_DESIGN = {
+  pred_lion: { dietDir: "肉食", species: "ライオン" },
+  pred_owl: { dietDir: "肉食", species: "フクロウ" },
+  pred_wolf: { dietDir: "肉食", species: "オオカミ" },
+  pred_bear: { dietDir: "肉食", species: "クマ" },
 };
 
 function moveAnimSheetUrl(designId, sex, stage) {
@@ -66,11 +72,35 @@ function moveAnimSheetUrl(designId, sex, stage) {
   return `${ANIM_BASE}/${dd}/${sp}/移動/${sp}${sexJp}_${stageJp}.png?v=${encodeURIComponent(CACHE_BUST)}`;
 }
 
+function attackAnimSheetUrl(designId, sex, stage) {
+  const id = String(designId || "");
+  const spec = ATTACK_ANIM_BY_DESIGN[id];
+  if (!spec) return "";
+
+  const st = String(stage || "adult");
+  if (st !== "young" && st !== "adult") return "";
+
+  const sexJp = String(sex || "male") === "female" ? "雌" : "雄";
+  const stageJp = STAGE_JP[st] || STAGE_JP.adult;
+  const sp = String(spec.species || "");
+  const dd = String(spec.dietDir || "");
+  if (!sp || !dd) return "";
+
+  return `${ANIM_BASE}/${dd}/${sp}/攻撃/${sp}${sexJp}_${stageJp}.png?v=${encodeURIComponent(CACHE_BUST)}`;
+}
+
 const PART_SETS = {
   horn: { dir: "ツノ", prefix: "ツノ", count: 3, label: "ツノ" },
   wing: { dir: "羽", prefix: "羽", count: 3, label: "羽" },
 };
 const PLANT_SET = { dir: "植物", prefix: "植物", count: 15, label: "植物" };
+const PLANT_ANIM_SET = { dir: "植物", prefix: "植物_", count: 15, frameCount: 5 };
+const PLANT_STAGE_SET = [
+  { id: "bud", label: "芽", file: "芽.png" },
+  { id: "stem", label: "茎", file: "茎.png" },
+];
+const PLANT_ANIM_FPS = 1.6;
+const PLANT_ANIM_SEARCH_RADIUS = 96;
 
 const DEFAULT_TINT = [1, 1, 1];
 const DEFAULT_PAPER = 1.0;
@@ -137,6 +167,47 @@ function partAssetUrl(kind, idx) {
 function plantAssetUrl(idx) {
   const n = clampInt(idx, 1, 9999);
   return sampleAssetUrl(PLANT_SET.dir, `${PLANT_SET.prefix}${n}.png`);
+}
+
+function plantAnimSheetUrl(idx) {
+  const n = clampInt(idx, 1, PLANT_ANIM_SET.count);
+  return `${ANIM_BASE}/${PLANT_ANIM_SET.dir}/${PLANT_ANIM_SET.prefix}${n}.png?v=${encodeURIComponent(CACHE_BUST)}`;
+}
+
+function plantStageAssetUrl(stageId) {
+  const id = String(stageId || "");
+  const spec = PLANT_STAGE_SET.find((x) => x.id === id);
+  if (!spec) return "";
+  return sampleAssetUrl(PLANT_SET.dir, spec.file);
+}
+
+function plantStageAnimSheetUrl(stageId) {
+  const id = String(stageId || "");
+  const spec = PLANT_STAGE_SET.find((x) => x.id === id);
+  if (!spec) return "";
+  return `${ANIM_BASE}/${PLANT_ANIM_SET.dir}/${encodeURIComponent(spec.file)}?v=${encodeURIComponent(CACHE_BUST)}`;
+}
+
+function makePlantVariantPreviewSpec(idx) {
+  const n = clampInt(idx, 1, PLANT_SET.count);
+  return {
+    id: `plant_${n}`,
+    label: `${PLANT_SET.label}${n}`,
+    stillUrl: plantAssetUrl(n),
+    animUrl: plantAnimSheetUrl(n),
+  };
+}
+
+function makePlantStagePreviewSpec(stageId) {
+  const id = String(stageId || "");
+  const spec = PLANT_STAGE_SET.find((x) => x.id === id);
+  if (!spec) return null;
+  return {
+    id: `plant_stage_${spec.id}`,
+    label: spec.label,
+    stillUrl: plantStageAssetUrl(spec.id),
+    animUrl: plantStageAnimSheetUrl(spec.id),
+  };
 }
 
 const keyedDrawableCache = new Map();
@@ -934,6 +1005,9 @@ class SimpleSim {
     this.eatSheetUrl = "";
     this.eatFrames = null;
     this.eatFramesLoading = null;
+    this.attackSheetUrl = "";
+    this.attackFrames = null;
+    this.attackFramesLoading = null;
 
     // overlay parts + plants (from assets/sample)
     this.keyBg = true;
@@ -945,6 +1019,10 @@ class SimpleSim {
     this.plantMode = "random"; // "random" or number
     this.plantDrawables = new Map(); // idx -> drawable
     this.plantLoading = new Map(); // idx -> Promise
+
+    // plant animations (7-frame sprite sheets; variant-based cache)
+    this.plantAnimFrames = new Map(); // idx -> frames[]
+    this.plantAnimLoading = new Map(); // idx -> Promise
 
     // top-down world (survival-game-ish) preview
     this.tileSize = 64;
@@ -961,6 +1039,10 @@ class SimpleSim {
     this.time = 0;
     this.lastTs = 0;
     this.running = false;
+
+    // manual demo mode (for preview)
+    this.attackMode = false;
+    this.attackAnimT = 0;
 
     this.reset();
   }
@@ -986,6 +1068,9 @@ class SimpleSim {
     this.facing = -1; // -1: left (default PNG direction), +1: right
     this.chewPhase = 0;
     this.chewFxT = 0;
+
+    this.attackMode = false;
+    this.attackAnimT = 0;
 
     this._ensureInitialPosition();
     this._renderStatus();
@@ -1013,6 +1098,32 @@ class SimpleSim {
     if (sex) this.sex = String(sex);
     if (stage) this.stage = String(stage);
     this._syncSprite();
+  }
+
+  setAttackMode(enabled) {
+    const on = Boolean(enabled);
+    if (on === this.attackMode) return;
+    this.attackMode = on;
+    if (on) {
+      this.attackAnimT = 0;
+      this.state = "attack";
+      this.goalX = null;
+      this.goalY = null;
+      this.targetFoodIdx = -1;
+      this.velX = 0;
+      this.velY = 0;
+    } else {
+      if (this.state === "attack") this.state = "wander";
+      this.goalX = null;
+      this.goalY = null;
+      this.targetFoodIdx = -1;
+      this.goalCooldownT = 0.25;
+    }
+    this._renderStatus();
+  }
+
+  toggleAttackMode() {
+    this.setAttackMode(!this.attackMode);
   }
 
   setParts({ horn = 0, wing = 0, keyBg = this.keyBg } = {}) {
@@ -1111,6 +1222,38 @@ class SimpleSim {
     return null;
   }
 
+  _ensurePlantAnimFrames(idx) {
+    const n = clampInt(idx, 1, PLANT_ANIM_SET.count);
+    if (this.plantAnimFrames.has(n)) return this.plantAnimFrames.get(n);
+    if (this.plantAnimLoading.has(n)) return null;
+
+    const url = plantAnimSheetUrl(n);
+    const p = loadSpriteSheetFrames(url, {
+      frameCount: PLANT_ANIM_SET.frameCount,
+      targetSize: 256,
+      alphaThreshold: 8,
+      paddingPct: 0.08,
+      bgMaxThreshold: 12,
+      chromaThreshold: 18,
+      searchRadiusPx: PLANT_ANIM_SEARCH_RADIUS,
+      splitMode: "auto",
+    })
+      .then((res) => {
+        const frames = Array.isArray(res?.frames) ? res.frames.filter(Boolean) : [];
+        if (frames.length) this.plantAnimFrames.set(n, frames);
+      })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error(err);
+      })
+      .finally(() => {
+        this.plantAnimLoading.delete(n);
+      });
+
+    this.plantAnimLoading.set(n, p);
+    return null;
+  }
+
   _syncSprite() {
     const designId = String(this.designId || "");
     if (!designId) return;
@@ -1132,6 +1275,7 @@ class SimpleSim {
 
     this._syncWalkSheet();
     this._syncEatSheet();
+    this._syncAttackSheet();
   }
 
   _syncWalkSheet() {
@@ -1199,6 +1343,42 @@ class SimpleSim {
       });
   }
 
+  _syncAttackSheet() {
+    const url = attackAnimSheetUrl(this.designId, this.sex, this.stage);
+    if (url === this.attackSheetUrl) return;
+
+    this.attackSheetUrl = url;
+    this.attackFrames = null;
+    this.attackFramesLoading = null;
+
+    if (!url) {
+      if (this.attackMode) this.setAttackMode(false);
+      return;
+    }
+
+    const token = url;
+    this.attackFramesLoading = loadSpriteSheetFrames(url, {
+      frameCount: 4,
+      targetSize: 512,
+      alphaThreshold: 8,
+      paddingPct: 0.12,
+      bgMaxThreshold: 12,
+      chromaThreshold: 18,
+      searchRadiusPx: 260,
+      // Attack sheets often have uneven spacing; use auto valley detection to avoid neighbor-frame bleed.
+      splitMode: "auto",
+    })
+      .then((res) => {
+        if (this.attackSheetUrl !== token) return;
+        this.attackFrames = res?.frames || null;
+      })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error(err);
+        if (this.attackSheetUrl === token) this.attackFrames = null;
+      });
+  }
+
   screenToWorld(xPx, yPx) {
     if (!this.ctx) return { x: 0, y: 0 };
     resizeCanvasToDisplaySize(this.canvas);
@@ -1231,7 +1411,10 @@ class SimpleSim {
     const y = clampNumber(yWorld, 0, this.worldH);
     const kind = kindOverride ? String(kindOverride) : foodKindForDesign(this.designId);
     const item = { x, y, kind };
-    if (kind === "plant") item.plantVariant = this._pickPlantVariant();
+    if (kind === "plant") {
+      item.plantVariant = this._pickPlantVariant();
+      item.animSeed = Math.random();
+    }
     this.foods.push(item);
   }
 
@@ -1311,6 +1494,23 @@ class SimpleSim {
       this.chewFxT = Math.min(1.0, this.chewFxT + dt * 5.5);
     } else {
       this.chewFxT = Math.max(0, this.chewFxT - dt * 3);
+    }
+
+    if (this.attackMode) {
+      this.state = "attack";
+      this.goalX = null;
+      this.goalY = null;
+      this.targetFoodIdx = -1;
+      this.velX = 0;
+      this.velY = 0;
+      this.attackAnimT += dt;
+      if (this.followCamera) {
+        const k = Math.min(1, dt * 3.2);
+        this.camX += (this.posX - this.camX) * k;
+        this.camY += (this.posY - this.camY) * k;
+      }
+      this._renderStatus();
+      return;
     }
 
     const shouldSeekFood = this.foods.length > 0 && this.hunger < 0.7;
@@ -1461,12 +1661,22 @@ class SimpleSim {
     if (!this.statusEl) return;
     const h = Math.round(this.hunger * 100);
     const stateLabel =
-      this.state === "seek_food" ? "食事へ移動" : this.state === "eat" ? "食事" : this.foods.length ? "徘徊（食事待ち）" : "徘徊";
+      this.state === "attack"
+        ? "攻撃"
+        : this.state === "seek_food"
+          ? "食事へ移動"
+          : this.state === "eat"
+            ? "食事"
+            : this.foods.length
+              ? "徘徊（食事待ち）"
+              : "徘徊";
     const walkCount = Array.isArray(this.walkFrames) ? this.walkFrames.filter(Boolean).length : 0;
     const eatCount = Array.isArray(this.eatFrames) ? this.eatFrames.filter(Boolean).length : 0;
+    const attackCount = Array.isArray(this.attackFrames) ? this.attackFrames.filter(Boolean).length : 0;
     const notes = [];
     if (this.walkSheetUrl && walkCount) notes.push(`歩行:${walkCount}f`);
     if (this.eatSheetUrl && eatCount) notes.push(`食事:${eatCount}f`);
+    if (this.attackSheetUrl && attackCount) notes.push(`攻撃:${attackCount}f`);
     const animNote = notes.length ? ` / アニメ: ${notes.join(" / ")}` : "";
     this.statusEl.textContent = `状態: ${stateLabel} / 空腹: ${h}% / ごはん: ${this.foods.length}${animNote}`;
   }
@@ -1538,6 +1748,24 @@ class SimpleSim {
     if (!Number.isFinite(Number(food?.plantVariant))) {
       idx = this._pickPlantVariant();
       if (food && typeof food === "object") food.plantVariant = idx;
+    }
+
+    const animFrames = this._ensurePlantAnimFrames(idx);
+    if (Array.isArray(animFrames) && animFrames.length) {
+      const seed = Number(food?.animSeed ?? 0);
+      const t = this.time * PLANT_ANIM_FPS + seed * animFrames.length;
+      const fi = clampInt(Math.floor(t % animFrames.length), 0, animFrames.length - 1);
+      const frame = animFrames[fi] || animFrames[0];
+
+      const z = clampNumber(this.camZoom, 0.35, 2.5);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(z, z);
+      ctx.globalAlpha = 0.98;
+      const size = 56;
+      drawContained(ctx, frame, -size * 0.5, -size * 0.84, size, size);
+      ctx.restore();
+      return;
     }
 
     const drawable = this._ensurePlantDrawable(idx);
@@ -1637,12 +1865,20 @@ class SimpleSim {
 
     const walkFrames = this.walkFrames;
     const eatFrames = this.eatFrames;
+    const attackFrames = this.attackFrames;
     let img = this.spriteImg;
     // Prefer animated sheet's idle frame so style stays consistent.
     if (this.walkSheetUrl && Array.isArray(walkFrames) && walkFrames.length) {
       img = walkFrames[0] || img;
     }
-    if (this.state === "eat" && Array.isArray(eatFrames) && eatFrames.length) {
+    if (this.state === "attack" && Array.isArray(attackFrames) && attackFrames.length) {
+      const frames = attackFrames.filter(Boolean);
+      if (frames.length) {
+        const fps = 9.5;
+        const idx = clampInt(Math.floor((this.attackAnimT * fps) % frames.length), 0, frames.length - 1);
+        img = frames[idx] || frames[0] || img;
+      }
+    } else if (this.state === "eat" && Array.isArray(eatFrames) && eatFrames.length) {
       const phase01 = (this.chewPhase / (Math.PI * 2)) % 1;
       const idx = clampInt(Math.floor(phase01 * eatFrames.length), 0, eatFrames.length - 1);
       img = eatFrames[idx] || eatFrames[0] || img;
@@ -1818,6 +2054,185 @@ function buildAssetThumbCard({ label, id, url }) {
   return { card, header, canvas, url: String(url || ""), id: String(id || ""), label: String(label || ""), token: "" };
 }
 
+function initPlantAnimModal() {
+  const modal = document.getElementById("sbPlantAnimModal");
+  const back = document.getElementById("sbPlantAnimBack");
+  const closeBtn = document.getElementById("sbPlantAnimClose");
+  const titleEl = document.getElementById("sbPlantAnimTitle");
+  const subEl = document.getElementById("sbPlantAnimSub");
+  const canvas = document.getElementById("sbPlantAnimCanvas");
+  const ctx = canvas?.getContext?.("2d", { alpha: true }) || null;
+
+  if (!modal || !canvas || !ctx) {
+    return { open: () => {}, close: () => {}, setKeyBg: () => {} };
+  }
+
+  let isOpen = false;
+  let currentSpec = makePlantVariantPreviewSpec(1);
+  let keyBg = true;
+  let lastTs = 0;
+  let t = 0;
+
+  const animFramesById = new Map();
+  const animLoadingById = new Map();
+
+  let stillUrl = "";
+  let stillDrawable = null;
+  let stillLoading = null;
+
+  const setHeader = () => {
+    if (titleEl) titleEl.textContent = "植物アニメ";
+    if (subEl) subEl.textContent = `${currentSpec?.label || "植物"}（${PLANT_ANIM_SET.frameCount}フレーム）`;
+  };
+
+  const ensureAnim = () => {
+    const spec = currentSpec;
+    const key = String(spec?.id || "");
+    const url = String(spec?.animUrl || "");
+    if (!key || !url) return;
+    if (animFramesById.has(key)) return;
+    if (animLoadingById.has(key)) return;
+
+    const p = loadSpriteSheetFrames(url, {
+      frameCount: PLANT_ANIM_SET.frameCount,
+      targetSize: 512,
+      alphaThreshold: 8,
+      paddingPct: 0.08,
+      bgMaxThreshold: 12,
+      chromaThreshold: 18,
+      searchRadiusPx: PLANT_ANIM_SEARCH_RADIUS,
+      splitMode: "auto",
+    })
+      .then((res) => {
+        const frames = Array.isArray(res?.frames) ? res.frames.filter(Boolean) : [];
+        if (frames.length) animFramesById.set(key, frames);
+      })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error(err);
+      })
+      .finally(() => {
+        animLoadingById.delete(key);
+      });
+
+    animLoadingById.set(key, p);
+  };
+
+  const ensureStill = () => {
+    const url = String(currentSpec?.stillUrl || "");
+    if (!url || url === stillUrl) return;
+
+    stillUrl = url;
+    stillDrawable = null;
+    stillLoading = loadDrawable(url, { keyBg })
+      .then((d) => {
+        if (stillUrl !== url) return;
+        stillDrawable = d;
+      })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error(err);
+        if (stillUrl === url) stillDrawable = null;
+      })
+      .finally(() => {
+        if (stillUrl === url) stillLoading = null;
+      });
+  };
+
+  const drawFrame = () => {
+    resizeCanvasToDisplaySize(canvas);
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    const drawDrawable = (drawable) => {
+      if (!drawable) return;
+      const sz = drawableSize(drawable);
+      const maxW = w * 0.92;
+      const maxH = h * 0.92;
+      const s = Math.max(0.0001, Math.min(maxW / sz.w, maxH / sz.h));
+      const dw = Math.max(1, Math.round(sz.w * s));
+      const dh = Math.max(1, Math.round(sz.h * s));
+      const dx = Math.round((w - dw) / 2);
+      const bottomY = Math.round(h * 0.86);
+      const dy = Math.round(bottomY - dh);
+      ctx.globalAlpha = 0.98;
+      ctx.drawImage(drawable, dx, dy, dw, dh);
+    };
+
+    const frames = animFramesById.get(String(currentSpec?.id || ""));
+    if (Array.isArray(frames) && frames.length) {
+      const i = clampInt(Math.floor((t * PLANT_ANIM_FPS) % frames.length), 0, frames.length - 1);
+      drawDrawable(frames[i] || frames[0]);
+      return;
+    }
+
+    if (stillDrawable) {
+      drawDrawable(stillDrawable);
+      return;
+    }
+
+    // loading / fallback text
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.font = "14px sans-serif";
+    ctx.fillText("読み込み中…", 14, 22);
+  };
+
+  const tick = (ts) => {
+    if (!isOpen) return;
+    const dt = Math.min(0.05, Math.max(0.001, (ts - lastTs) / 1000));
+    lastTs = ts;
+    t += dt;
+    drawFrame();
+    requestAnimationFrame(tick);
+  };
+
+  const open = (specOrIdx) => {
+    if (typeof specOrIdx === "number") currentSpec = makePlantVariantPreviewSpec(specOrIdx);
+    else if (specOrIdx && typeof specOrIdx === "object") currentSpec = specOrIdx;
+    else currentSpec = makePlantVariantPreviewSpec(1);
+    setHeader();
+
+    // Reset time so repeated opens start from the beginning-ish.
+    t = 0;
+    lastTs = performance.now();
+
+    // Ensure assets.
+    ensureAnim();
+    ensureStill();
+
+    isOpen = true;
+    modal.hidden = false;
+    requestAnimationFrame(tick);
+  };
+
+  const close = () => {
+    isOpen = false;
+    modal.hidden = true;
+  };
+
+  closeBtn?.addEventListener("click", close);
+  back?.addEventListener("click", close);
+  window.addEventListener("keydown", (ev) => {
+    if (!isOpen) return;
+    if (ev.key === "Escape") close();
+  });
+
+  return {
+    open,
+    close,
+    setKeyBg: (v) => {
+      keyBg = Boolean(v);
+      // Re-load still drawable with the new keying policy.
+      stillUrl = "";
+      stillDrawable = null;
+      stillLoading = null;
+      ensureStill();
+    },
+  };
+}
+
 function renderCardOverlay(cardItem, { zoom = 1, horn = 0, wing = 0, keyBg = false } = {}) {
   const canvas = cardItem?.overlay;
   if (!canvas) return;
@@ -1911,6 +2326,7 @@ async function main() {
   const simStatus = document.getElementById("sbSimStatus");
   const simBtnFood = document.getElementById("sbSimSpawnFood");
   const simBtnHungry = document.getElementById("sbSimHungry");
+  const simBtnAttack = document.getElementById("sbSimAttack");
   const simBtnReset = document.getElementById("sbSimReset");
 
   if (grid && location?.protocol === "file:") {
@@ -1929,7 +2345,23 @@ async function main() {
   let selectedId = String(DESIGNS?.[0]?.id || "");
   const sim = simCanvas ? new SimpleSim({ canvas: simCanvas, selectedEl: simSelected, statusEl: simStatus }) : null;
 
+  const refreshAttackUi = () => {
+    if (!simBtnAttack) return;
+    if (!sim) {
+      simBtnAttack.disabled = true;
+      simBtnAttack.textContent = "攻撃（未対応）";
+      return;
+    }
+    const sex = String(sexSel?.value || "male");
+    const stage = String(stageSel?.value || "adult");
+    const canAttack = Boolean(attackAnimSheetUrl(selectedId, sex, stage));
+    if (!canAttack) sim.setAttackMode(false);
+    simBtnAttack.disabled = !canAttack;
+    simBtnAttack.textContent = canAttack ? (sim.attackMode ? "攻撃: ON" : "攻撃: OFF") : "攻撃（未対応）";
+  };
+
   const assetThumbs = [];
+  const plantModal = initPlantAnimModal();
   if (assetsGrid) {
     assetsGrid.textContent = "";
     const items = [];
@@ -1948,17 +2380,30 @@ async function main() {
         id: `plant_${i}`,
         label: `${PLANT_SET.label}${i}`,
         url: plantAssetUrl(i),
+        previewSpec: makePlantVariantPreviewSpec(i),
+      });
+    }
+    for (const stage of PLANT_STAGE_SET) {
+      const previewSpec = makePlantStagePreviewSpec(stage.id);
+      if (!previewSpec) continue;
+      items.push({
+        id: previewSpec.id,
+        label: previewSpec.label,
+        url: previewSpec.stillUrl,
+        previewSpec,
       });
     }
 
     for (const it of items) {
       const t = buildAssetThumbCard(it);
+      t.previewSpec = it.previewSpec || null;
       assetsGrid.appendChild(t.card);
       assetThumbs.push(t);
     }
   }
 
   const drawAssetThumbs = ({ keyBg = false } = {}) => {
+    plantModal?.setKeyBg?.(keyBg);
     for (const t of assetThumbs) {
       const canvas = t.canvas;
       const ctx = canvas?.getContext?.("2d", { alpha: true }) || null;
@@ -1979,9 +2424,26 @@ async function main() {
           t.header.innerHTML = `<div>${escapeHtml(t.label)}</div><div style="opacity:.65">読み込み失敗</div>`;
           // eslint-disable-next-line no-console
           console.error(err);
-        });
+      });
     }
   };
+
+  // Plant thumbnails: open a dedicated animation modal for closer inspection.
+  for (const t of assetThumbs) {
+    if (!t.previewSpec) continue;
+    t.card.classList.add("isClickable");
+    t.card.tabIndex = 0;
+    t.card.setAttribute("role", "button");
+    t.card.setAttribute("aria-label", `${t.label} をプレビュー`);
+    t.card.title = "クリックでアニメプレビュー（7フレーム）";
+    t.card.addEventListener("click", () => plantModal.open(t.previewSpec));
+    t.card.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        plantModal.open(t.previewSpec);
+      }
+    });
+  }
 
   const applySelectionUi = () => {
     for (const c of cards) {
@@ -1995,6 +2457,8 @@ async function main() {
       sim.setSelection({ designId: selectedId, designLabel: d?.label || selectedId });
       sim.setAppearance({ sex: String(sexSel?.value || "male"), stage: String(stageSel?.value || "adult") });
     }
+
+    refreshAttackUi();
   };
 
   let randomized = false;
@@ -2034,6 +2498,8 @@ async function main() {
     sim?.setParts({ horn, wing, keyBg });
     sim?.setPlantConfig({ plant, keyBg });
     drawAssetThumbs({ keyBg });
+
+    refreshAttackUi();
   };
 
   sexSel?.addEventListener("change", applyAll);
@@ -2098,6 +2564,10 @@ async function main() {
 
     simBtnFood?.addEventListener("click", () => sim.spawnFoodRandom());
     simBtnHungry?.addEventListener("click", () => sim.makeHungry());
+    simBtnAttack?.addEventListener("click", () => {
+      sim.toggleAttackMode();
+      refreshAttackUi();
+    });
     simBtnReset?.addEventListener("click", () => sim.reset());
   }
 

@@ -60,6 +60,8 @@ export const FUR_HEAT_TARGET_C = 40;
 export const PLANT_REGEN_PER_SECOND = 1;
 export const PLANT_REPRO_COOLDOWN_SECONDS = 15;
 export const PLANT_GROWTH_STAGE_SECONDS = 30;
+export const PLANT_ANIM_FRAME_COUNT = 5;
+export const PLANT_ANIM_FPS = 1.6;
 
 export const WEATHER_KIND = {
   sunny: "sunny",
@@ -72,6 +74,9 @@ export const WEATHER_STEP_SECONDS = 30;
 
 export const ATTACK_RANGE_TILES = 1;
 export const ATTACK_COOLDOWN_SECONDS = 2;
+export const ATTACK_ANIM_FRAME_COUNT = 4;
+export const ATTACK_ANIM_FPS = 9.5;
+export const ATTACK_ANIM_SECONDS = ATTACK_ANIM_FRAME_COUNT / ATTACK_ANIM_FPS;
 
 export const REPRO_RANGE_TILES = 5;
 export const REPRO_COOLDOWN_SECONDS = 30;

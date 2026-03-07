@@ -46,10 +46,10 @@ function Design-FromFileName([string]$name) {
   if ($first -eq $CH_ARAI) { return "pred_raccoon" }
   if ($first -eq $CH_INO) { return "omn_boar" }
   if ($first -eq $CH_OO) { return "pred_wolf" }
-  if ($first -eq $CH_KUMA) { return "omn_bear" }
+  if ($first -eq $CH_KUMA) { return "pred_bear" }
   if ($first -eq $CH_SHI) { return "herb_zebra" }
   if ($first -eq $CH_RA) { return "pred_lion" }
-  if ($first -eq $CH_NEKO) { return "pred_cat" }
+  if ($first -eq $CH_NEKO) { return "omn_cat" }
   if ($first -eq $CH_UMA) { return "herb_horse" }
   if ($first -eq $CH_NEZU) { return "omn_mouse" }
   return $null

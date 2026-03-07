@@ -181,6 +181,7 @@ export function tryReproduce({
         nestId: nest.id,
         motherSnapshot: motherSnap,
         fatherSnapshot: fatherSnap,
+        eggDesignId: e.designId || mate.designId || null,
         groupId: nestGroupId,
       });
       spawned.push(egg);

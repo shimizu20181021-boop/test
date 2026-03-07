@@ -176,6 +176,74 @@
       .sbAssetGrid .sbCard {
         cursor: default;
       }
+      .sbAssetGrid .sbCard.isClickable {
+        cursor: pointer;
+      }
+      .sbAssetGrid .sbCard.isClickable:hover {
+        outline: 2px solid rgba(59, 130, 246, 0.5);
+      }
+
+      .sbModal {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+      }
+      .sbModal[hidden] {
+        display: none;
+      }
+      .sbModalBack {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+      }
+      .sbModalPanel {
+        position: relative;
+        width: min(720px, 100%);
+        background: rgba(255, 255, 255, 0.98);
+        border-radius: 12px;
+        border: 1px solid rgba(0, 0, 0, 0.16);
+        overflow: hidden;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24);
+      }
+      .sbModalHeader {
+        padding: 10px 12px;
+        font-size: 12px;
+        color: rgba(0, 0, 0, 0.75);
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+      }
+      .sbModalHeader button {
+        font-size: 13px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        border: 1px solid rgba(0, 0, 0, 0.18);
+        background: white;
+        cursor: pointer;
+      }
+      .sbModalBody {
+        padding: 10px 12px 12px;
+      }
+      .sbPlantPreviewWrap {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        border-radius: 10px;
+        overflow: hidden;
+        background: linear-gradient(180deg, #fbf6e9 0%, #f5e7c7 60%, #f0dba8 100%);
+        border: 1px solid rgba(0, 0, 0, 0.12);
+      }
+      .sbPlantPreviewWrap canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
     </style>
   </head>
   <body>
@@ -297,6 +365,7 @@
           <div class="sbSimControls">
             <button id="sbSimSpawnFood">ごはんを置く</button>
             <button id="sbSimHungry">空腹にする</button>
+            <button id="sbSimAttack">攻撃（未対応）</button>
             <button id="sbSimReset">リセット</button>
             <div id="sbSimStatus" class="sbSimStatus"></div>
           </div>
@@ -304,7 +373,26 @@
       </div>
     </div>
 
+    <div id="sbPlantAnimModal" class="sbModal" hidden>
+      <div class="sbModalBack" id="sbPlantAnimBack"></div>
+      <div class="sbModalPanel" role="dialog" aria-modal="true" aria-labelledby="sbPlantAnimTitle">
+        <div class="sbModalHeader">
+          <div>
+            <b id="sbPlantAnimTitle">植物アニメ</b>
+            <span id="sbPlantAnimSub" style="opacity: 0.7; margin-left: 6px"></span>
+          </div>
+          <button id="sbPlantAnimClose" type="button">閉じる</button>
+        </div>
+        <div class="sbModalBody">
+          <div class="sbPlantPreviewWrap">
+            <canvas id="sbPlantAnimCanvas" aria-label="植物アニメプレビュー"></canvas>
+          </div>
+          <div style="margin-top: 8px; font-size: 12px; color: rgba(0, 0, 0, 0.62)">Esc / 背景クリックで閉じます</div>
+        </div>
+      </div>
+    </div>
+
     <!-- cache-bust: keep preview in sync after JS tweaks -->
-    <script defer src="./tools/storybook_preview.js?v=10"></script>
+    <script defer src="./tools/storybook_preview.js?v=22"></script>
   </body>
 </html>

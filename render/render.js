@@ -1,5 +1,12 @@
 import { clamp } from "../core/utils.js";
-import { TERRITORY_ALPHA_BY_LEVEL } from "../world/macro/constants.js";
+import {
+  ATTACK_ANIM_FPS,
+  ATTACK_ANIM_FRAME_COUNT,
+  ATTACK_ANIM_SECONDS,
+  PLANT_ANIM_FPS,
+  PLANT_ANIM_FRAME_COUNT,
+  TERRITORY_ALPHA_BY_LEVEL,
+} from "../world/macro/constants.js";
 import { WeatherFx } from "./weather_fx.js";
 
 const MACRO_TILE_ASSETS = {
@@ -41,6 +48,17 @@ const STORYBOOK_CREATURE_ASSET_BASE = "./assets/storybook/creatures_png";
 const MACRO_ANIM_ASSET_BASE = "./assets/アニメーション";
 const SAMPLE_ASSET_BASE = "./assets/sample";
 const SAMPLE_PLANT_DIR = `${SAMPLE_ASSET_BASE}/植物`;
+const MACRO_OBJECT_ASSET_BASE = "./assets/素材";
+const MACRO_NEST_SPRITE_URLS = [
+  `${MACRO_OBJECT_ASSET_BASE}/巣_1.png`,
+  `${MACRO_OBJECT_ASSET_BASE}/巣_2.png`,
+  `${MACRO_OBJECT_ASSET_BASE}/巣_3.png`,
+];
+const MACRO_EGG_SPRITE_URL_BY_DESIGN = {
+  herb_pigeon: `${MACRO_OBJECT_ASSET_BASE}/ハトの卵.png`,
+  omn_crow: `${MACRO_OBJECT_ASSET_BASE}/カラスの卵.png`,
+  pred_owl: `${MACRO_OBJECT_ASSET_BASE}/フクロウの卵.png`,
+};
 
 const MOVE_ANIM_FRAME_COUNT = 7;
 const MOVE_ANIM_TARGET_SIZE = 256;
@@ -53,15 +71,13 @@ const MOVE_ANIM_BY_DESIGN = {
   omn_mouse: { dietDir: "雑食", species: "ネズミ" },
   omn_boar: { dietDir: "雑食", species: "イノシシ" },
   omn_crow: { dietDir: "雑食", species: "カラス" },
+  omn_cat: { dietDir: "草食", species: "猫" },
   pred_raccoon: { dietDir: "雑食", species: "アライグマ" },
 
   pred_wolf: { dietDir: "肉食", species: "オオカミ" },
-  omn_bear: { dietDir: "肉食", species: "クマ" },
+  pred_bear: { dietDir: "肉食", species: "クマ" },
   pred_owl: { dietDir: "肉食", species: "フクロウ" },
   pred_lion: { dietDir: "肉食", species: "ライオン" },
-
-  // NOTE: フォルダ上の分類に合わせています（現状：草食/猫）
-  pred_cat: { dietDir: "草食", species: "猫" },
 };
 
 const MOVE_ANIM_STAGE_JP = {
@@ -70,6 +86,20 @@ const MOVE_ANIM_STAGE_JP = {
   young: "若大人",
   adult: "大人",
 };
+
+const ATTACK_ANIM_BY_DESIGN = {
+  pred_wolf: { dietDir: "肉食", species: "オオカミ" },
+  pred_bear: { dietDir: "肉食", species: "クマ" },
+  pred_owl: { dietDir: "肉食", species: "フクロウ" },
+  pred_lion: { dietDir: "肉食", species: "ライオン" },
+};
+
+const ATTACK_ANIM_STAGE_JP = {
+  young: "若大人",
+  adult: "大人",
+};
+
+const PLANT_ANIM_SEARCH_RADIUS = 96;
 
 function moveAnimSheetUrl(designId, sex, stage) {
   const id = String(designId || "");
@@ -82,6 +112,20 @@ function moveAnimSheetUrl(designId, sex, stage) {
   const dd = String(spec.dietDir || "");
   if (!sp || !dd) return "";
   return `${MACRO_ANIM_ASSET_BASE}/${dd}/${sp}/移動/${sp}${sexJp}_${stageJp}.png`;
+}
+
+function attackAnimSheetUrl(designId, sex, stage) {
+  const id = String(designId || "");
+  const spec = ATTACK_ANIM_BY_DESIGN[id];
+  if (!spec) return "";
+  const st = String(stage || "adult");
+  const stageJp = ATTACK_ANIM_STAGE_JP[st];
+  if (!stageJp) return "";
+  const sexJp = String(sex || "male") === "female" ? "雌" : "雄";
+  const sp = String(spec.species || "");
+  const dd = String(spec.dietDir || "");
+  if (!sp || !dd) return "";
+  return `${MACRO_ANIM_ASSET_BASE}/${dd}/${sp}/攻撃/${sp}${sexJp}_${stageJp}.png`;
 }
 
 const _imageAssetCache = new Map();
@@ -1732,9 +1776,6 @@ function drawMacroTiles(ctx, camera, tileSize, viewW, viewH, macroWorld, weather
   const startY = Math.floor(camera.y / tileSize);
   const endX = Math.ceil((camera.x + viewW) / tileSize);
   const endY = Math.ceil((camera.y + viewH) / tileSize);
-  const edgeWBase = tileSize * 0.22;
-  const edgeWidth = (diff) => Math.max(1, edgeWBase * Math.max(0, Math.min(1, Math.abs(diff) / 6)));
-  const edgeAlpha = (diff) => Math.max(0.12, Math.min(0.75, 0.14 + (Math.abs(diff) / 20) * 0.58));
   const hasElevation = Boolean(macroWorld?.getElevationAtTile);
 
   const grassImgs = (Array.isArray(MACRO_TILE_ASSETS.grass) ? MACRO_TILE_ASSETS.grass : []).map(getImageAsset);
@@ -1870,30 +1911,7 @@ function drawMacroTiles(ctx, camera, tileSize, viewW, viewH, macroWorld, weather
           ctx.restore();
         }
       }
-
       // Territory paint overlay is drawn after mountain stamps (see below).
-
-      // Elevation edges (stronger visual step walls).
-      if (hasElevation) {
-        const rightH = Number(macroWorld.getElevationAtTile(tx + 1, ty)) || 0;
-        const bottomH = Number(macroWorld.getElevationAtTile(tx, ty + 1)) || 0;
-
-        const diffR = hm - rightH;
-        if (Math.abs(diffR) >= 1) {
-          const w = edgeWidth(diffR);
-          const a = edgeAlpha(diffR);
-          ctx.fillStyle = `rgba(0,0,0,${a})`;
-          ctx.fillRect(x + tileSize - w, y, w, tileSize);
-        }
-
-        const diffB = hm - bottomH;
-        if (Math.abs(diffB) >= 1) {
-          const hh = edgeWidth(diffB);
-          const a = edgeAlpha(diffB);
-          ctx.fillStyle = `rgba(0,0,0,${a})`;
-          ctx.fillRect(x, y + tileSize - hh, tileSize, hh);
-        }
-      }
     }
   }
 
@@ -2307,10 +2325,85 @@ function plantSpriteUrl(stage, idx) {
   return `${SAMPLE_PLANT_DIR}/植物${n}.png`;
 }
 
+function plantAnimSheetUrl(stage, idx) {
+  const st = Math.max(0, Math.min(2, Math.round(Number(stage == null ? 2 : stage))));
+  if (st === 0) return `${MACRO_ANIM_ASSET_BASE}/植物/芽.png`;
+  if (st === 1) return `${MACRO_ANIM_ASSET_BASE}/植物/茎.png`;
+  const n = Math.max(1, Math.min(15, Math.round(Number(idx) || 1)));
+  return `${MACRO_ANIM_ASSET_BASE}/植物/植物_${n}.png`;
+}
+
+function nestSpriteUrl(variant) {
+  const explicitIndex = Math.round(Number(variant?.nestSpriteIndex) || 0);
+  if (explicitIndex >= 1 && explicitIndex <= MACRO_NEST_SPRITE_URLS.length) {
+    return MACRO_NEST_SPRITE_URLS[explicitIndex - 1] || "";
+  }
+  const fallbackIndex = Math.max(0, Math.min(MACRO_NEST_SPRITE_URLS.length - 1, Math.round(Number(variant?.nestStyle) || 0)));
+  return MACRO_NEST_SPRITE_URLS[fallbackIndex] || MACRO_NEST_SPRITE_URLS[0] || "";
+}
+
+function eggSpriteUrlForMacro(macro) {
+  const designId =
+    String(
+      macro?.eggDesignId ||
+        macro?.motherSnapshot?.designId ||
+        macro?.fatherSnapshot?.designId ||
+        "",
+    ) || "";
+  return MACRO_EGG_SPRITE_URL_BY_DESIGN[designId] || "";
+}
+
 const CREATURE_SPRITE_H_PER_RADIUS = 3.2;
 const CREATURE_SPRITE_ANCHOR_Y = 0.62;
 const PLANT_SPRITE_H_PER_RADIUS = 3.1;
 const PLANT_SPRITE_ANCHOR_Y = 0.62;
+const NEST_SPRITE_H_PER_RADIUS = 2.55;
+const NEST_SPRITE_ANCHOR_Y = 0.58;
+const EGG_SPRITE_H_PER_RADIUS = 2.45;
+const EGG_SPRITE_ANCHOR_Y = 0.57;
+
+function getMacroAttackAnimDrawable(macro, designId, sex, stage) {
+  const remaining = clamp(Number(macro?.attackAnimSeconds) || 0, 0, ATTACK_ANIM_SECONDS);
+  if (remaining <= 0) return null;
+  const url = attackAnimSheetUrl(designId, sex, stage);
+  if (!url) return null;
+  const anim = getSpriteSheetFramesAsset(url, {
+    frameCount: ATTACK_ANIM_FRAME_COUNT,
+    targetSize: MOVE_ANIM_TARGET_SIZE,
+    alphaThreshold: 8,
+    paddingPct: 0.08,
+    bgMaxThreshold: 12,
+    chromaThreshold: 18,
+    searchRadiusPx: 220,
+    splitMode: "auto",
+  });
+  const frames = Array.isArray(anim?.frames) ? anim.frames.filter(Boolean) : [];
+  if (!frames.length) return null;
+  const progress = 1 - remaining / Math.max(0.0001, ATTACK_ANIM_SECONDS);
+  const idx = clampInt(Math.floor(progress * frames.length), 0, frames.length - 1);
+  return frames[idx] || frames[frames.length - 1] || null;
+}
+
+function getMacroPlantAnimDrawable(macro, stage, idx, timeSeconds) {
+  const url = plantAnimSheetUrl(stage, idx);
+  if (!url) return null;
+  const anim = getSpriteSheetFramesAsset(url, {
+    frameCount: PLANT_ANIM_FRAME_COUNT,
+    targetSize: 256,
+    alphaThreshold: 8,
+    paddingPct: 0.08,
+    bgMaxThreshold: 12,
+    chromaThreshold: 18,
+    searchRadiusPx: PLANT_ANIM_SEARCH_RADIUS,
+    splitMode: "auto",
+  });
+  const frames = Array.isArray(anim?.frames) ? anim.frames.filter(Boolean) : [];
+  if (!frames.length) return null;
+  const seed = ((Math.abs(Math.round(Number(macro?.id) || 0)) % 997) / 997) * frames.length;
+  const t = Math.max(0, Number(timeSeconds) || 0) * PLANT_ANIM_FPS + seed;
+  const frameIdx = clampInt(Math.floor(t % frames.length), 0, frames.length - 1);
+  return frames[frameIdx] || frames[0] || null;
+}
 
 function drawMacroCreatureSprite(ctx, macro, x, y) {
   const designId = String(macro?.designId || "");
@@ -2334,7 +2427,10 @@ function drawMacroCreatureSprite(ctx, macro, x, y) {
   const animFrames = hasAnim ? anim.frames : null;
 
   let drawable = null;
-  if (moving) {
+  const attackDrawable = getMacroAttackAnimDrawable(macro, designId, sex, stage);
+  if (attackDrawable) {
+    drawable = attackDrawable;
+  } else if (moving) {
     // Moving: prefer sprite-sheet.
     if (animFrames) {
       const idx = clampInt(Math.floor(phase01 * animFrames.length), 0, animFrames.length - 1);
@@ -2375,13 +2471,13 @@ function drawMacroCreatureSprite(ctx, macro, x, y) {
   return true;
 }
 
-function drawMacroPlantSprite(ctx, macro, x, y) {
+function drawMacroPlantSprite(ctx, macro, x, y, timeSeconds = 0) {
   if (!macro) return false;
   const stage = Math.max(0, Math.min(2, Math.round(Number(macro.plantStage == null ? 2 : macro.plantStage))));
   const idxRaw = macro?.variant?.plantSpriteIndex ?? macro?.plantSpriteIndex ?? macro?.id ?? 1;
   const idx = Math.max(1, Math.min(15, Math.round(Number(idxRaw) || 1)));
   const url = plantSpriteUrl(stage, idx);
-  const drawable = getKeyedDrawableAsset(url);
+  const drawable = getMacroPlantAnimDrawable(macro, stage, idx, timeSeconds) || getKeyedDrawableAsset(url);
   if (!drawable) return false;
 
   const { w: iw, h: ih } = drawableSize(drawable);
@@ -2405,6 +2501,21 @@ const EGG_WARM_VISUAL_SECONDS = 15;
 
 function drawMacroNest(ctx, x, y, r, variant) {
   const rot = Number(variant?.rotation) || 0;
+  const drawable = getTrimmedSquareSpriteAsset(nestSpriteUrl(variant), { targetSize: 384, alphaThreshold: 8, paddingPct: 0.08 });
+  if (drawable) {
+    const { w: iw, h: ih } = drawableSize(drawable);
+    const targetH = Math.max(10, r * NEST_SPRITE_H_PER_RADIUS);
+    const s = targetH / Math.max(1, ih);
+    const dw = iw * s;
+    const dh = targetH;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.drawImage(drawable, -dw * 0.5, -dh * NEST_SPRITE_ANCHOR_Y, dw, dh);
+    ctx.restore();
+    return;
+  }
   const style = Math.max(0, Math.min(2, Math.round(Number(variant?.nestStyle) || 0)));
 
   ctx.save();
@@ -2443,6 +2554,32 @@ function drawMacroEgg(ctx, x, y, r, macro) {
   const wiggle = warmed ? Math.sin(t / 90) * r * (nearHatch ? 0.12 : 0.07) : 0;
   const wobbleRot = warmed ? Math.sin(t / 140) * (nearHatch ? 0.22 : 0.12) : 0;
   const rot = (Number(macro?.variant?.rotation) || 0) + wobbleRot;
+  const drawable = getTrimmedSquareSpriteAsset(eggSpriteUrlForMacro(macro), { targetSize: 256, alphaThreshold: 8, paddingPct: 0.08 });
+
+  if (drawable) {
+    const { w: iw, h: ih } = drawableSize(drawable);
+    const targetH = Math.max(8, r * EGG_SPRITE_H_PER_RADIUS);
+    const s = targetH / Math.max(1, ih);
+    const dw = iw * s;
+    const dh = targetH;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.translate(wiggle, 0);
+    if (nearHatch) {
+      ctx.shadowBlur = r * 0.45;
+      ctx.shadowColor = "rgba(255, 220, 150, 0.45)";
+    }
+    ctx.drawImage(drawable, -dw * 0.5, -dh * EGG_SPRITE_ANCHOR_Y, dw, dh);
+    ctx.restore();
+
+    if (warm > 0) {
+      const remaining = Math.max(0, EGG_HATCH_WARM_SECONDS - warm);
+      drawMacroCooldownArc(ctx, x, y, r, remaining, EGG_HATCH_WARM_SECONDS, "rgba(255,170,0,0.45)");
+    }
+    return;
+  }
 
   ctx.save();
   ctx.translate(x, y);
@@ -3138,6 +3275,40 @@ function drawEatIcon(ctx, x, y, type, alpha = 1) {
   ctx.restore();
 }
 
+function drawSweatIcon(ctx, x, y, size, alpha = 1, phase = 0) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(x, y);
+
+  const drops = [
+    { x: 0, y: 0, s: 1.0 },
+    { x: size * 0.72, y: size * 0.42, s: 0.72 },
+    { x: -size * 0.38, y: size * 0.68, s: 0.56 },
+  ];
+
+  for (let i = 0; i < drops.length; i++) {
+    const drop = drops[i];
+    const bob = Math.sin(phase + i * 1.1) * size * 0.08;
+    const s = size * drop.s;
+    ctx.save();
+    ctx.translate(drop.x, drop.y + bob);
+    ctx.rotate(0.22);
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.7);
+    ctx.bezierCurveTo(s * 0.5, -s * 0.28, s * 0.58, s * 0.34, 0, s * 0.7);
+    ctx.bezierCurveTo(-s * 0.58, s * 0.34, -s * 0.5, -s * 0.28, 0, -s * 0.7);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(110,190,255,0.95)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.75)";
+    ctx.lineWidth = Math.max(1, s * 0.08);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
 function drawMacroStats(ctx, macro, x, y) {
   if (!macro) return;
   if (macro.kind === "egg" || macro.kind === "nest") return;
@@ -3230,7 +3401,7 @@ function drawMacroEntity(ctx, macro, { timeSeconds = 0, dtSeconds = 0, macroWorl
     return;
   }
   if (kind === "plant") {
-    if (!drawMacroPlantSprite(ctx, macro, x, yy)) {
+    if (!drawMacroPlantSprite(ctx, macro, x, yy, timeSeconds)) {
       drawMacroPlant(ctx, x, yy, radius, macro.variant, macro.plantStage);
     }
     drawMacroStats(ctx, macro, x, yy);
@@ -3305,6 +3476,12 @@ function drawMacroEntity(ctx, macro, { timeSeconds = 0, dtSeconds = 0, macroWorl
 
   if (macro.heatActive) {
     drawHeartIcon(ctx, x + radius * 0.45, yy - radius - 34, 9, 0.95);
+  }
+
+  if ((macro.fleeFxSeconds ?? 0) > 0) {
+    const a = clamp((Number(macro.fleeFxSeconds) || 0) / 0.35, 0, 1);
+    const phase = (Number(timeSeconds) || 0) * 10;
+    drawSweatIcon(ctx, x + radius * 0.92, yy - radius - 30, 8, 0.9 * a, phase);
   }
 
   if (eatT > 0 && macro.eatFxType) {

@@ -956,5 +956,6 @@ export function stepAnimalAi({
   }
 
   evolutionStepEntity({ world, entity: e, dt, tileSizePx: tile, tileWidth: tw, tileHeight: th });
+  if (fleeing) e.fleeFxSeconds = Math.max(Number(e.fleeFxSeconds) || 0, 0.35);
   e.aiState = aiState;
 }

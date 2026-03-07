@@ -1,6 +1,7 @@
 import { clamp } from "../../core/utils.js";
 import {
   ATTACK_COOLDOWN_SECONDS,
+  ATTACK_ANIM_SECONDS,
   DANGER_ADD_ON_HIT,
   FEAR_ADD_ON_HIT_SECONDS,
   FEAR_MAX_SECONDS,
@@ -35,6 +36,8 @@ export function computeAttackTargetAndTryStrike({
   let attackTarget = null;
 
   if (dietNow !== "carnivore") return { attackTarget };
+  const stage = String(entity?.lifeStage || "adult");
+  if (stage !== "adult" && stage !== "youngAdult") return { attackTarget };
   const hunger = clamp(Number(hungerPct) || 0, 0, 1);
   if (hunger >= FOOD_SEEK_START_HUNGER_PCT) return { attackTarget };
 
@@ -56,7 +59,12 @@ export function computeAttackTargetAndTryStrike({
     from: entity,
     radiusPx: fleeRangePx,
     world: { width: w, height: h },
-    filter: (o) => o && !o._dead && !isMacroNonAnimalKind(o.kind) && !isCloseSpecies(entity, o) && canReachByTerrain(o),
+    filter: (o) => {
+      if (!o || o._dead) return false;
+      if (isMacroNonAnimalKind(o.kind)) return false;
+      if (isCloseSpecies(entity, o)) return false;
+      return canReachByTerrain(o);
+    },
   });
 
   if (!attackTarget) return { attackTarget };
@@ -95,6 +103,7 @@ export function computeAttackTargetAndTryStrike({
   }
 
   entity.attackCooldownSeconds = ATTACK_COOLDOWN_SECONDS;
+  entity.attackAnimSeconds = ATTACK_ANIM_SECONDS;
   entity.hitFxSeconds = Math.max(entity.hitFxSeconds ?? 0, 0.1);
   entity.attackCount = (entity.attackCount ?? 0) + 1;
   entity.attackImpulse = (entity.attackImpulse ?? 0) + 1;

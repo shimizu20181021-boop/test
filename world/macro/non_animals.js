@@ -76,6 +76,7 @@ export function stepPlantEntity({ world, entity, dt, tile, w, h, tw, th, weather
     for (const [dx, dy] of offsets) {
       const tx = ((tx0 + dx) % tw + tw) % tw;
       const ty = ((ty0 + dy) % th + th) % th;
+      if (typeof world?.isPlantableTile === "function" && !world.isPlantableTile(tx, ty)) continue;
       const key = `${tx},${ty}`;
       if ((plantTileCounts.get(key) || 0) <= 0) emptyNeighbors.push({ dx, dy, tx, ty, key });
     }
@@ -172,7 +173,12 @@ export function stepMeatEntity({ world, entity, dt, tile, w, h, tw, th, meatRotE
       }
     }
 
-    if (!hasPlantNearby && popCounts.plant < POP_CAP_PLANT && Math.random() < 1 / 3) {
+    if (
+      !hasPlantNearby &&
+      popCounts.plant < POP_CAP_PLANT &&
+      Math.random() < 1 / 3 &&
+      (!(typeof world?.isPlantableTile === "function") || world.isPlantableTile(tx0, ty0))
+    ) {
       const seed = (e.id * 2654435761 + Math.floor((e.x + e.y) * 31) + Date.now()) >>> 0;
       const rng = mulberry32(seed);
       const baseR = radiusFromKind("plant");
@@ -184,6 +190,7 @@ export function stepMeatEntity({ world, entity, dt, tile, w, h, tw, th, meatRotE
         40,
         seededFloat(rng, 0, Math.PI * 2),
         seededFloat(rng, 0, 1),
+        true,
       );
       const newPlant = world._makeEntity({
         x: placed.x,

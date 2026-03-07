@@ -165,9 +165,11 @@ export function stepAnimalVitals({ world, entity, dt, tile, w, h, spawned, popCo
   }
 
   entity.attackCooldownSeconds = Math.max(0, (entity.attackCooldownSeconds ?? 0) - dt);
+  entity.attackAnimSeconds = Math.max(0, (entity.attackAnimSeconds ?? 0) - dt);
   entity.eatCooldownSeconds = Math.max(0, (entity.eatCooldownSeconds ?? 0) - dt);
   entity.reproCooldownSeconds = Math.max(0, (entity.reproCooldownSeconds ?? 0) - dt);
   entity.eatFxSeconds = Math.max(0, (entity.eatFxSeconds ?? 0) - dt);
+  entity.fleeFxSeconds = Math.max(0, (entity.fleeFxSeconds ?? 0) - dt);
   entity.hitFxSeconds = Math.max(0, (entity.hitFxSeconds ?? 0) - dt);
   entity.wanderTimeLeft = Math.max(0, (entity.wanderTimeLeft ?? 0) - dt);
 

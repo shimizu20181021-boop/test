@@ -124,8 +124,8 @@ function calendarFromElapsedSeconds(elapsedSeconds) {
 
 const CREATURE_DESIGN_IDS_BY_DIET = {
   herbivore: { mammal: ["herb_pig", "herb_horse", "herb_zebra"], bird: ["herb_pigeon"] },
-  omnivore: { mammal: ["omn_mouse", "omn_boar", "omn_bear"], bird: ["omn_crow"] },
-  carnivore: { mammal: ["pred_wolf", "pred_cat", "pred_raccoon", "pred_lion"], bird: ["pred_owl"] },
+  omnivore: { mammal: ["omn_mouse", "omn_boar", "omn_cat"], bird: ["omn_crow"] },
+  carnivore: { mammal: ["pred_wolf", "pred_bear", "pred_raccoon", "pred_lion"], bird: ["pred_owl"] },
 };
 
 const CREATURE_TAXON = { mammal: "mammal", bird: "bird" };
@@ -449,7 +449,7 @@ export class MacroWorld {
     const tw = Math.max(1, Math.floor(this._world.width / tile));
     const th = Math.max(1, Math.floor(this._world.height / tile));
     if (this._elevations && this._elevations.tileWidth === tw && this._elevations.tileHeight === th) return;
-    this._elevations = generateElevationMap({ tileWidth: tw, tileHeight: th, seed: this._elevationSeed, mountainFraction: 0.2 });
+    this._elevations = generateElevationMap({ tileWidth: tw, tileHeight: th, seed: this._elevationSeed, mountainFraction: 0.14 });
   }
 
   _ensureMountainCool() {
@@ -724,6 +724,23 @@ export class MacroWorld {
     const x = ((Number(tx) | 0) % tw + tw) % tw;
     const y = ((Number(ty) | 0) % th + th) % th;
     return m.tiles[y * tw + x] | 0;
+  }
+
+  isPlantableTile(tx, ty) {
+    return (Number(this.getElevationAtTile(tx, ty)) || 0) <= 0;
+  }
+
+  isPlantableAtWorld(x, y) {
+    const tile = MACRO_CONFIG.tileSize;
+    const w = this._world.width;
+    const h = this._world.height;
+    const tw = Math.max(1, Math.floor(w / tile));
+    const th = Math.max(1, Math.floor(h / tile));
+    const px = wrapCoord(x, w);
+    const py = wrapCoord(y, h);
+    const tx = clampInt(Math.floor(px / tile), 0, tw - 1);
+    const ty = clampInt(Math.floor(py / tile), 0, th - 1);
+    return this.isPlantableTile(tx, ty);
   }
 
   getMountainLabels() {
@@ -1075,6 +1092,52 @@ export class MacroWorld {
     return counts;
   }
 
+  _hasAdvancingTimeEntities() {
+    for (const e of this.entities) {
+      if (!e || e._dead) continue;
+      if (e.kind === "plant") return true;
+      if (!isMacroNonAnimalKind(e.kind)) return true;
+    }
+    return false;
+  }
+
+  _pruneOrphanBirdNestsAndEggs() {
+    const live = this.entities.filter((e) => e && !e._dead);
+    if (!live.length) return;
+
+    const byId = new Map();
+    for (const e of live) byId.set(e.id, e);
+
+    const orphanNestIds = new Set();
+    for (const e of live) {
+      if (e.kind !== "nest") continue;
+      const mother = e.nestMotherId != null ? byId.get(e.nestMotherId) : null;
+      const father = e.nestFatherId != null ? byId.get(e.nestFatherId) : null;
+      const hasLivingParentBird =
+        (mother && !mother._dead && !isMacroNonAnimalKind(mother.kind)) ||
+        (father && !father._dead && !isMacroNonAnimalKind(father.kind));
+      if (!hasLivingParentBird) orphanNestIds.add(e.id);
+    }
+
+    if (!orphanNestIds.size) return;
+
+    for (const e of this.entities) {
+      if (!e || e._dead) continue;
+      if (e.kind === "nest" && orphanNestIds.has(e.id)) {
+        e._dead = true;
+        continue;
+      }
+      if (e.kind === "egg") {
+        const nestId = e.nestId;
+        if (nestId == null || !byId.has(nestId) || orphanNestIds.has(nestId)) {
+          e._dead = true;
+        }
+      }
+    }
+
+    this.entities = this.entities.filter((e) => e && !e._dead);
+  }
+
   addFromReincarnation(reincarnation) {
     const baseSeed = (reincarnation?.id ?? Date.now()) * 2654435761;
     const rng = mulberry32(baseSeed);
@@ -1110,6 +1173,7 @@ export class MacroWorld {
       height,
       radius: radiusForEntity(kind, reincarnation),
       groupRadius: kind === "plant" ? 95 : 70,
+      requirePlantable: kind === "plant",
     });
 
     if (kind === "plant") {
@@ -1119,7 +1183,7 @@ export class MacroWorld {
       const r = radiusFromKind(kind) * seededFloat(rng, 0.75, 1.15);
       const plantVariant = variantForSex("none");
       for (let i = 0; i < count; i++) {
-        const placed = this._placeNear(center, r, 140, 40, seededFloat(rng, 0, Math.PI * 2), seededFloat(rng, 0, 1));
+        const placed = this._placeNear(center, r, 140, 40, seededFloat(rng, 0, Math.PI * 2), seededFloat(rng, 0, 1), true);
         this.entities.push(
           this._makeEntity({
             x: placed.x,
@@ -1317,11 +1381,13 @@ export class MacroWorld {
           ? 0
           : scaledAttackDamage(attackDamageBase, dietType, this.getCarnAttackMul()),
       attackCooldownSeconds: 0,
+      attackAnimSeconds: 0,
       eatCooldownSeconds: 0,
       reproCooldownSeconds: 0,
       heatCycleSeconds: heatOffset,
       heatActive: false,
       eatFxSeconds: 0,
+      fleeFxSeconds: 0,
       eatFxType: null,
       hitFxSeconds: 0,
       wanderAngle: seededFloat(rng, 0, Math.PI * 2),
@@ -1395,6 +1461,7 @@ export class MacroWorld {
       variant: {
         rotation: seededFloat(rng, -0.5, 0.5),
         nestStyle: seededInt(rng, 0, 2),
+        nestSpriteIndex: seededInt(rng, 1, 3),
       },
       reincarnation: null,
       hpMax: 1,
@@ -1411,7 +1478,7 @@ export class MacroWorld {
     };
   }
 
-  _makeEgg({ x, y, nestId, motherSnapshot, fatherSnapshot, groupId }) {
+  _makeEgg({ x, y, nestId, motherSnapshot, fatherSnapshot, eggDesignId, groupId }) {
     const seed = (Date.now() + nextMacroId * 2654435761 + (nestId ?? 0) * 1013904223 + Math.floor((x + y) * 17)) >>> 0;
     const rng = mulberry32(seed);
     return {
@@ -1438,6 +1505,7 @@ export class MacroWorld {
       nestId: nestId ?? null,
       warmSeconds: 0,
       unwarmedSeconds: 0,
+      eggDesignId: eggDesignId || null,
       motherSnapshot: motherSnapshot || null,
       fatherSnapshot: fatherSnapshot || null,
     };
@@ -1562,8 +1630,13 @@ export class MacroWorld {
   }
 
   update(dt) {
-    this._elapsedSeconds = (this._elapsedSeconds ?? 0) + (Number(dt) || 0);
-    this._stepWeather(dt);
+    this._pruneOrphanBirdNestsAndEggs();
+
+    const rawDt = Math.max(0, Number(dt) || 0);
+    const simDt = this._hasAdvancingTimeEntities() ? rawDt : 0;
+
+    this._elapsedSeconds = (this._elapsedSeconds ?? 0) + simDt;
+    this._stepWeather(simDt);
     this._updateClimateState();
     const tile = MACRO_CONFIG.tileSize;
     const w = this._world.width;
@@ -1606,7 +1679,7 @@ export class MacroWorld {
         stepPlantEntity({
           world: this,
           entity: e,
-          dt,
+          dt: simDt,
           tile,
           w,
           h,
@@ -1625,7 +1698,7 @@ export class MacroWorld {
         stepMeatEntity({
           world: this,
           entity: e,
-          dt,
+          dt: simDt,
           tile,
           w,
           h,
@@ -1640,16 +1713,16 @@ export class MacroWorld {
       }
 
       if (e.kind === "nest") {
-        stepNestEntity({ entity: e, dt });
+        stepNestEntity({ entity: e, dt: simDt });
         continue;
       }
 
       if (e.kind === "egg") {
-        stepEggEntity({ entity: e, dt });
+        stepEggEntity({ entity: e, dt: simDt });
         continue;
       }
 
-      stepAnimalVitals({ world: this, entity: e, dt, tile, w, h, spawned, popCounts });
+      stepAnimalVitals({ world: this, entity: e, dt: simDt, tile, w, h, spawned, popCounts });
       if (e._dead) continue;
     }
 
@@ -1677,7 +1750,7 @@ export class MacroWorld {
       entities,
       gridState,
       tile,
-      dt,
+      dt: simDt,
       w,
       h,
       groupMaxSize: this._groupMaxSize,
@@ -1694,7 +1767,7 @@ export class MacroWorld {
         gridState,
         socialGroupCenters,
         socialGroupCenterList,
-        dt,
+        dt: simDt,
         tile,
         w,
         h,
@@ -1716,25 +1789,28 @@ export class MacroWorld {
     entities = separationPass({ entities, tile, w, h });
 
     // Nest incubation + hatching (eggs), and parenting mode transitions.
-    stepNestIncubationAndParenting({ world: this, entities, spawned, dt, tile, w, h, popCounts });
+    stepNestIncubationAndParenting({ world: this, entities, spawned, dt: simDt, tile, w, h, popCounts });
 
     entities = entities.filter((e) => !e._dead);
     entities.push(...spawned.filter((e) => !e._dead));
     this.entities = entities;
 
     // Territory paint (group color) is updated after all movements/spawns for this tick.
-    stepTerritoryPaint({ world: this, territory: this._territoryPaint, entities: this.entities, dt, tile, w, h });
+    stepTerritoryPaint({ world: this, territory: this._territoryPaint, entities: this.entities, dt: simDt, tile, w, h });
   }
 
-  _pickSpawnPoint({ width, height, radius, groupRadius }) {
+  _pickSpawnPoint({ width, height, radius, groupRadius, requirePlantable = false }) {
     const pad = 30 + radius + groupRadius;
     const attempts = 50;
     let x = randFloat(pad, Math.max(pad + 1, width - pad));
     let y = randFloat(pad, Math.max(pad + 1, height - pad));
+    let best = null;
 
     for (let i = 0; i < attempts; i++) {
       const tx = randFloat(pad, Math.max(pad + 1, width - pad));
       const ty = randFloat(pad, Math.max(pad + 1, height - pad));
+      if (requirePlantable && !this.isPlantableAtWorld(tx, ty)) continue;
+      if (!best) best = { x: tx, y: ty };
       if (!this._overlaps(tx, ty, radius + groupRadius)) {
         x = tx;
         y = ty;
@@ -1742,10 +1818,21 @@ export class MacroWorld {
       }
     }
 
+    if (requirePlantable && !best) {
+      for (let i = 0; i < attempts * 4; i++) {
+        const tx = randFloat(pad, Math.max(pad + 1, width - pad));
+        const ty = randFloat(pad, Math.max(pad + 1, height - pad));
+        if (!this.isPlantableAtWorld(tx, ty)) continue;
+        best = { x: tx, y: ty };
+        break;
+      }
+    }
+
+    if (requirePlantable && !this.isPlantableAtWorld(x, y) && best) return best;
     return { x, y };
   }
 
-  _placeNear(center, radius, maxDist, attempts, startAngle, startT) {
+  _placeNear(center, radius, maxDist, attempts, startAngle, startT, requirePlantable = false) {
     const { width, height } = this._world;
     const pad = 20 + radius;
     let best = { x: clamp(center.x, pad, width - pad), y: clamp(center.y, pad, height - pad) };
@@ -1756,10 +1843,12 @@ export class MacroWorld {
       const dist = (0.15 + t) * maxDist;
       const x = clamp(center.x + Math.cos(ang) * dist, pad, width - pad);
       const y = clamp(center.y + Math.sin(ang) * dist, pad, height - pad);
+      if (requirePlantable && !this.isPlantableAtWorld(x, y)) continue;
       if (!this._overlaps(x, y, radius)) return { x, y };
       best = { x, y };
     }
 
+    if (requirePlantable && !this.isPlantableAtWorld(best.x, best.y)) return center;
     return best;
   }
 

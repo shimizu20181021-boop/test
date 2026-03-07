@@ -65,12 +65,12 @@ export function generateElevationMap({ tileWidth, tileHeight, seed, mountainFrac
   const clusters = []; // { tx, ty, r }
 
   const span = Math.sqrt(area);
-  const minR = clampInt(Math.round(span / 80) + 2, 3, 9);
-  const maxR = clampInt(Math.round(span / 30) + 3, Math.max(minR + 2, 8), 24);
-  const gap = 2;
+  const minR = clampInt(Math.round(span / 72) + 2, 3, 10);
+  const maxR = clampInt(Math.round(span / 28) + 3, Math.max(minR + 2, 9), 26);
+  const gap = clampInt(Math.round(span / 90) + 3, 3, 10);
 
-  // Allow enough clusters to reach the target coverage even on medium maps.
-  const maxClusters = clampInt(Math.round(area / 300), 12, 650);
+  // Keep mountains more spread out by limiting how many separate blobs we place.
+  const maxClusters = clampInt(Math.round(area / 420), 8, 420);
 
   const pickHeight = () => {
     // Mostly 1..15, but sometimes 16..20.
