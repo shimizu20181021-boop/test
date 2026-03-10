@@ -27,7 +27,7 @@ import { wrapCoord } from "./geom.js";
 import { isMacroNonAnimalKind } from "./kinds.js";
 import { dietTypeForEntity, populationCapForDietType } from "./diet.js";
 import { clamp01, clampInt, smoothstep01 } from "./math.js";
-import { applyLifeStageScaling, lifeStageFromAgeSeconds } from "./stats.js";
+import { applyLifeStageScaling, lifeStageFromAgeSeconds, radiusForEntity } from "./stats.js";
 import { pushNaturalGenome, recordDeathForEvolution } from "./evolution_pool.js";
 
 export function stepAnimalVitals({ world, entity, dt, tile, w, h, spawned, popCounts }) {
@@ -43,6 +43,12 @@ export function stepAnimalVitals({ world, entity, dt, tile, w, h, spawned, popCo
   if (!entity.born && (!entity.lifeStage || entity.lifeStage === "none")) entity.lifeStage = "adult";
 
   if (entity.born) {
+    let shouldRescale = false;
+    const adultBaseRadius = Number(radiusForEntity(entity.kind, entity.reincarnation));
+    if (Number.isFinite(adultBaseRadius) && adultBaseRadius > 0 && Math.abs((Number(entity.baseRadius) || 0) - adultBaseRadius) > 0.01) {
+      entity.baseRadius = adultBaseRadius;
+      shouldRescale = true;
+    }
     const nextStage = lifeStageFromAgeSeconds(entity.ageSeconds ?? 0);
     if (nextStage !== entity.lifeStage) {
       entity.lifeStage = nextStage;
@@ -50,6 +56,9 @@ export function stepAnimalVitals({ world, entity, dt, tile, w, h, spawned, popCo
         // Nestlings fledge at young adult stage.
         entity.nestId = null;
       }
+      shouldRescale = true;
+    }
+    if (shouldRescale) {
       applyLifeStageScaling(entity);
     }
   } else if (entity.baseHpMax == null || entity.baseRadius == null) {

@@ -60,6 +60,24 @@ const ATTACK_ANIM_BY_DESIGN = {
   pred_bear: { dietDir: "肉食", species: "クマ" },
 };
 
+const EAT_ANIM_BY_DESIGN = {
+  herb_pig: { dietDir: "草食", species: "豚" },
+  herb_horse: { dietDir: "草食", species: "馬" },
+  herb_zebra: { dietDir: "草食", species: "シマウマ" },
+  herb_pigeon: { dietDir: "草食", species: "ハト" },
+
+  omn_mouse: { dietDir: "雑食", species: "ネズミ" },
+  omn_boar: { dietDir: "雑食", species: "イノシシ" },
+  omn_crow: { dietDir: "雑食", species: "カラス" },
+  omn_cat: { dietDir: "草食", species: "猫" },
+  pred_raccoon: { dietDir: "雑食", species: "アライグマ" },
+
+  pred_wolf: { dietDir: "肉食", species: "オオカミ" },
+  pred_bear: { dietDir: "肉食", species: "クマ" },
+  pred_owl: { dietDir: "肉食", species: "フクロウ" },
+  pred_lion: { dietDir: "肉食", species: "ライオン" },
+};
+
 function moveAnimSheetUrl(designId, sex, stage) {
   const id = String(designId || "");
   const spec = MOVE_ANIM_BY_DESIGN[id];
@@ -89,12 +107,47 @@ function attackAnimSheetUrl(designId, sex, stage) {
   return `${ANIM_BASE}/${dd}/${sp}/攻撃/${sp}${sexJp}_${stageJp}.png?v=${encodeURIComponent(CACHE_BUST)}`;
 }
 
+function eatAnimSheetUrl(designId, sex, stage) {
+  const id = String(designId || "");
+  const spec = EAT_ANIM_BY_DESIGN[id];
+  if (!spec) return "";
+
+  const sexJp = String(sex || "male") === "female" ? "雌" : "雄";
+  const stageJp = STAGE_JP[String(stage || "adult")] || STAGE_JP.adult;
+  const sp = String(spec.species || "");
+  const dd = String(spec.dietDir || "");
+  if (!sp || !dd) return "";
+
+  return `${ANIM_BASE}/${dd}/${sp}/食事/${sp}${sexJp}_${stageJp}.png?v=${encodeURIComponent(CACHE_BUST)}`;
+}
+
 const PART_SETS = {
   horn: { dir: "ツノ", prefix: "ツノ", count: 3, label: "ツノ" },
   wing: { dir: "羽", prefix: "羽", count: 3, label: "羽" },
 };
-const PLANT_SET = { dir: "植物", prefix: "植物", count: 15, label: "植物" };
-const PLANT_ANIM_SET = { dir: "植物", prefix: "植物_", count: 15, frameCount: 5 };
+const PLANT_SET = { dir: "植物", label: "植物" };
+const PLANT_VARIANTS = [
+  { id: "1", label: "Lv1 植物1", stillFile: "植物1.png", animFile: "Lv1_植物_1.png" },
+  { id: "2", label: "Lv1 植物2", stillFile: "植物2.png", animFile: "Lv1_植物_2.png" },
+  { id: "3", label: "Lv1 植物3", stillFile: "植物3.png", animFile: "Lv1_植物_3.png" },
+  { id: "4", label: "Lv1 植物4", stillFile: "植物4.png", animFile: "Lv1_植物_4.png" },
+  { id: "5", label: "Lv1 植物5", stillFile: "植物5.png", animFile: "Lv1_植物_5.png" },
+  { id: "6", label: "Lv2 植物6", stillFile: "植物6.png", animFile: "Lv2_植物_6.png" },
+  { id: "7", label: "Lv2 植物7", stillFile: "植物7.png", animFile: "Lv2_植物_7.png" },
+  { id: "8", label: "Lv2 植物8", stillFile: "植物8.png", animFile: "Lv2_植物_8.png" },
+  { id: "9", label: "Lv2 植物9", stillFile: "植物9.png", animFile: "Lv2_植物_9.png" },
+  { id: "10", label: "Lv2 植物10", stillFile: "植物10.png", animFile: "Lv2_植物_10.png" },
+  { id: "11", label: "Lv3 植物11", stillFile: "植物11.png", animFile: "Lv3_植物_11.png" },
+  { id: "12", label: "Lv3 植物12", stillFile: "植物12.png", animFile: "Lv3_植物_12.png" },
+  { id: "13", label: "Lv3 植物13", stillFile: "植物13.png", animFile: "Lv3_植物_13.png" },
+  { id: "14", label: "Lv3 植物14", stillFile: "植物14.png", animFile: "Lv3_植物_14.png" },
+  { id: "15", label: "Lv3 植物15", stillFile: "植物15.png", animFile: "Lv3_植物_15.png" },
+  { id: "500", label: "Lv4 植物500", stillFile: "植物500.png", animFile: "Lv_4_植物500.png", drawScale: 1.2 },
+  { id: "1000", label: "Lv5 植物1000", stillFile: "植物1000.png", animFile: "Lv_5_植物1000.png", drawScale: 1.2 },
+];
+const PLANT_VARIANT_BY_ID = new Map(PLANT_VARIANTS.map((spec) => [String(spec.id), spec]));
+const DEFAULT_PLANT_VARIANT_ID = String(PLANT_VARIANTS[0]?.id || "1");
+const PLANT_ANIM_SET = { dir: "植物", frameCount: 5 };
 const PLANT_STAGE_SET = [
   { id: "bud", label: "芽", file: "芽.png" },
   { id: "stem", label: "茎", file: "茎.png" },
@@ -164,14 +217,36 @@ function partAssetUrl(kind, idx) {
   return sampleAssetUrl(set.dir, `${set.prefix}${n}.png`);
 }
 
-function plantAssetUrl(idx) {
-  const n = clampInt(idx, 1, 9999);
-  return sampleAssetUrl(PLANT_SET.dir, `${PLANT_SET.prefix}${n}.png`);
+function plantVariantSpec(variantId) {
+  const key = String(variantId ?? "");
+  return PLANT_VARIANT_BY_ID.get(key) || PLANT_VARIANT_BY_ID.get(DEFAULT_PLANT_VARIANT_ID) || null;
 }
 
-function plantAnimSheetUrl(idx) {
-  const n = clampInt(idx, 1, PLANT_ANIM_SET.count);
-  return `${ANIM_BASE}/${PLANT_ANIM_SET.dir}/${PLANT_ANIM_SET.prefix}${n}.png?v=${encodeURIComponent(CACHE_BUST)}`;
+function normalizePlantVariantId(variantId) {
+  const spec = plantVariantSpec(variantId);
+  return String(spec?.id || DEFAULT_PLANT_VARIANT_ID);
+}
+
+function randomPlantVariantId() {
+  const spec = PLANT_VARIANTS[Math.floor(Math.random() * PLANT_VARIANTS.length)];
+  return String(spec?.id || DEFAULT_PLANT_VARIANT_ID);
+}
+
+function plantAssetUrl(variantId) {
+  const spec = plantVariantSpec(variantId);
+  if (!spec) return "";
+  return sampleAssetUrl(PLANT_SET.dir, spec.stillFile);
+}
+
+function plantAnimSheetUrl(variantId) {
+  const spec = plantVariantSpec(variantId);
+  if (!spec) return "";
+  return `${ANIM_BASE}/${PLANT_ANIM_SET.dir}/${encodeURIComponent(spec.animFile)}?v=${encodeURIComponent(CACHE_BUST)}`;
+}
+
+function plantVariantDrawScale(variantId) {
+  const spec = plantVariantSpec(variantId);
+  return clampNumber(spec?.drawScale ?? 1, 0.5, 1.5);
 }
 
 function plantStageAssetUrl(stageId) {
@@ -189,12 +264,14 @@ function plantStageAnimSheetUrl(stageId) {
 }
 
 function makePlantVariantPreviewSpec(idx) {
-  const n = clampInt(idx, 1, PLANT_SET.count);
+  const spec = plantVariantSpec(idx);
+  if (!spec) return null;
   return {
-    id: `plant_${n}`,
-    label: `${PLANT_SET.label}${n}`,
-    stillUrl: plantAssetUrl(n),
-    animUrl: plantAnimSheetUrl(n),
+    id: `plant_${spec.id}`,
+    label: spec.label,
+    stillUrl: plantAssetUrl(spec.id),
+    animUrl: plantAnimSheetUrl(spec.id),
+    drawScale: plantVariantDrawScale(spec.id),
   };
 }
 
@@ -1016,7 +1093,7 @@ class SimpleSim {
     this.partDrawables = { horn: null, wing: null };
     this.partLoading = { horn: null, wing: null };
 
-    this.plantMode = "random"; // "random" or number
+    this.plantMode = "random"; // "random" or plant variant id
     this.plantDrawables = new Map(); // idx -> drawable
     this.plantLoading = new Map(); // idx -> Promise
 
@@ -1158,7 +1235,7 @@ class SimpleSim {
     }
     const v = String(plant ?? "random");
     if (v === "random") this.plantMode = "random";
-    else this.plantMode = clampInt(v, 1, PLANT_SET.count);
+    else this.plantMode = normalizePlantVariantId(v);
   }
 
   _syncParts() {
@@ -1195,39 +1272,39 @@ class SimpleSim {
   }
 
   _pickPlantVariant() {
-    if (this.plantMode === "random") return 1 + Math.floor(Math.random() * PLANT_SET.count);
-    return clampInt(this.plantMode, 1, PLANT_SET.count);
+    if (this.plantMode === "random") return randomPlantVariantId();
+    return normalizePlantVariantId(this.plantMode);
   }
 
   _ensurePlantDrawable(idx) {
-    const n = clampInt(idx, 1, PLANT_SET.count);
-    if (this.plantDrawables.has(n)) return this.plantDrawables.get(n);
-    if (this.plantLoading.has(n)) return null;
+    const plantId = normalizePlantVariantId(idx);
+    if (this.plantDrawables.has(plantId)) return this.plantDrawables.get(plantId);
+    if (this.plantLoading.has(plantId)) return null;
 
-    const url = plantAssetUrl(n);
+    const url = plantAssetUrl(plantId);
     const keyBg = Boolean(this.keyBg);
     const p = loadDrawable(url, { keyBg })
       .then((drawable) => {
-        this.plantDrawables.set(n, drawable);
+        this.plantDrawables.set(plantId, drawable);
       })
       .catch((err) => {
         // eslint-disable-next-line no-console
         console.error(err);
       })
       .finally(() => {
-        this.plantLoading.delete(n);
+        this.plantLoading.delete(plantId);
       });
 
-    this.plantLoading.set(n, p);
+    this.plantLoading.set(plantId, p);
     return null;
   }
 
   _ensurePlantAnimFrames(idx) {
-    const n = clampInt(idx, 1, PLANT_ANIM_SET.count);
-    if (this.plantAnimFrames.has(n)) return this.plantAnimFrames.get(n);
-    if (this.plantAnimLoading.has(n)) return null;
+    const plantId = normalizePlantVariantId(idx);
+    if (this.plantAnimFrames.has(plantId)) return this.plantAnimFrames.get(plantId);
+    if (this.plantAnimLoading.has(plantId)) return null;
 
-    const url = plantAnimSheetUrl(n);
+    const url = plantAnimSheetUrl(plantId);
     const p = loadSpriteSheetFrames(url, {
       frameCount: PLANT_ANIM_SET.frameCount,
       targetSize: 256,
@@ -1240,17 +1317,17 @@ class SimpleSim {
     })
       .then((res) => {
         const frames = Array.isArray(res?.frames) ? res.frames.filter(Boolean) : [];
-        if (frames.length) this.plantAnimFrames.set(n, frames);
+        if (frames.length) this.plantAnimFrames.set(plantId, frames);
       })
       .catch((err) => {
         // eslint-disable-next-line no-console
         console.error(err);
       })
       .finally(() => {
-        this.plantAnimLoading.delete(n);
+        this.plantAnimLoading.delete(plantId);
       });
 
-    this.plantAnimLoading.set(n, p);
+    this.plantAnimLoading.set(plantId, p);
     return null;
   }
 
@@ -1312,8 +1389,7 @@ class SimpleSim {
   }
 
   _syncEatSheet() {
-    // NOTE: 今回は「食事フォルダ」を無視するため、食事アニメは未対応（通常の咀嚼エフェクトのみ）。
-    const url = "";
+    const url = eatAnimSheetUrl(this.designId, this.sex, this.stage);
     if (url === this.eatSheetUrl) return;
 
     this.eatSheetUrl = url;
@@ -1323,13 +1399,13 @@ class SimpleSim {
 
     const token = url;
     this.eatFramesLoading = loadSpriteSheetFrames(url, {
-      frameCount: 8,
+      frameCount: 7,
       targetSize: 512,
       alphaThreshold: 8,
-      paddingPct: 0.1,
+      paddingPct: 0.12,
       bgMaxThreshold: 12,
       chromaThreshold: 18,
-      searchRadiusPx: 180,
+      searchRadiusPx: 260,
       splitMode: "auto",
     })
       .then((res) => {
@@ -1744,8 +1820,8 @@ class SimpleSim {
     }
 
     // plant sprite (fallback to icon if not loaded)
-    let idx = clampInt(food?.plantVariant ?? 0, 1, PLANT_SET.count);
-    if (!Number.isFinite(Number(food?.plantVariant))) {
+    let idx = normalizePlantVariantId(food?.plantVariant);
+    if (!food?.plantVariant || !PLANT_VARIANT_BY_ID.has(String(food.plantVariant))) {
       idx = this._pickPlantVariant();
       if (food && typeof food === "object") food.plantVariant = idx;
     }
@@ -1762,7 +1838,7 @@ class SimpleSim {
       ctx.translate(x, y);
       ctx.scale(z, z);
       ctx.globalAlpha = 0.98;
-      const size = 56;
+      const size = 56 * plantVariantDrawScale(idx);
       drawContained(ctx, frame, -size * 0.5, -size * 0.84, size, size);
       ctx.restore();
       return;
@@ -1779,7 +1855,7 @@ class SimpleSim {
     ctx.translate(x, y);
     ctx.scale(z, z);
     ctx.globalAlpha = 0.98;
-    const size = 56;
+    const size = 56 * plantVariantDrawScale(idx);
     drawContained(ctx, drawable, -size * 0.5, -size * 0.84, size, size);
     ctx.restore();
   }
@@ -1905,9 +1981,7 @@ class SimpleSim {
     const drawH = spriteWorldH * z;
 
     // NOTE: Walking bob/sway intentionally disabled; use sprite-sheet motion only.
-    const bob = this.state === "eat"
-      ? Math.sin(this.chewPhase) * (this.tileSize * 0.06 * z) * (0.4 + 0.6 * this.chewFxT)
-      : 0;
+    const bob = 0;
 
     // Base sprites face LEFT by default (most provided PNGs are left-facing).
     // Flip horizontally when moving to the RIGHT.
@@ -2028,7 +2102,7 @@ function buildCard({ design }) {
   return { card, header, renderer, overlay };
 }
 
-function buildAssetThumbCard({ label, id, url }) {
+function buildAssetThumbCard({ label, id, url, drawScale = 1 }) {
   const card = document.createElement("div");
   card.className = "sbCard";
   card.tabIndex = -1;
@@ -2051,7 +2125,16 @@ function buildAssetThumbCard({ label, id, url }) {
   card.appendChild(header);
   card.appendChild(canvasWrap);
 
-  return { card, header, canvas, url: String(url || ""), id: String(id || ""), label: String(label || ""), token: "" };
+  return {
+    card,
+    header,
+    canvas,
+    url: String(url || ""),
+    id: String(id || ""),
+    label: String(label || ""),
+    token: "",
+    drawScale: clampNumber(drawScale, 0.5, 1.5),
+  };
 }
 
 function initPlantAnimModal() {
@@ -2149,8 +2232,9 @@ function initPlantAnimModal() {
     const drawDrawable = (drawable) => {
       if (!drawable) return;
       const sz = drawableSize(drawable);
-      const maxW = w * 0.92;
-      const maxH = h * 0.92;
+      const drawScale = clampNumber(currentSpec?.drawScale ?? 1, 0.5, 1.5);
+      const maxW = w * 0.92 * drawScale;
+      const maxH = h * 0.92 * drawScale;
       const s = Math.max(0.0001, Math.min(maxW / sz.w, maxH / sz.h));
       const dw = Math.max(1, Math.round(sz.w * s));
       const dh = Math.max(1, Math.round(sz.h * s));
@@ -2333,6 +2417,22 @@ async function main() {
     return;
   }
 
+  if (plantSel) {
+    const currentPlantValue = String(plantSel.value || "random");
+    plantSel.textContent = "";
+    const randomOpt = document.createElement("option");
+    randomOpt.value = "random";
+    randomOpt.textContent = "ランダム";
+    plantSel.appendChild(randomOpt);
+    for (const spec of PLANT_VARIANTS) {
+      const opt = document.createElement("option");
+      opt.value = spec.id;
+      opt.textContent = spec.label;
+      plantSel.appendChild(opt);
+    }
+    plantSel.value = currentPlantValue === "random" ? "random" : normalizePlantVariantId(currentPlantValue);
+  }
+
   const cards = [];
   grid.textContent = "";
 
@@ -2375,12 +2475,15 @@ async function main() {
         });
       }
     }
-    for (let i = 1; i <= PLANT_SET.count; i++) {
+    for (const plantSpec of PLANT_VARIANTS) {
+      const previewSpec = makePlantVariantPreviewSpec(plantSpec.id);
+      if (!previewSpec) continue;
       items.push({
-        id: `plant_${i}`,
-        label: `${PLANT_SET.label}${i}`,
-        url: plantAssetUrl(i),
-        previewSpec: makePlantVariantPreviewSpec(i),
+        id: previewSpec.id,
+        label: previewSpec.label,
+        url: previewSpec.stillUrl,
+        previewSpec,
+        drawScale: previewSpec.drawScale || 1,
       });
     }
     for (const stage of PLANT_STAGE_SET) {
@@ -2417,7 +2520,10 @@ async function main() {
           if (t.token !== token) return;
           resizeCanvasToDisplaySize(canvas);
           ctx.clearRect(0, 0, canvas.width, canvas.height);
-          drawContained(ctx, drawable, 0, 0, canvas.width, canvas.height);
+          const drawScale = clampNumber(t.drawScale ?? 1, 0.5, 1.5);
+          const padX = ((drawScale - 1) * canvas.width) / 2;
+          const padY = ((drawScale - 1) * canvas.height) / 2;
+          drawContained(ctx, drawable, -padX, -padY, canvas.width + padX * 2, canvas.height + padY * 2);
         })
         .catch((err) => {
           if (t.token !== token) return;
@@ -2435,7 +2541,7 @@ async function main() {
     t.card.tabIndex = 0;
     t.card.setAttribute("role", "button");
     t.card.setAttribute("aria-label", `${t.label} をプレビュー`);
-    t.card.title = "クリックでアニメプレビュー（7フレーム）";
+    t.card.title = `クリックでアニメプレビュー（${PLANT_ANIM_SET.frameCount}フレーム）`;
     t.card.addEventListener("click", () => plantModal.open(t.previewSpec));
     t.card.addEventListener("keydown", (ev) => {
       if (ev.key === "Enter" || ev.key === " ") {

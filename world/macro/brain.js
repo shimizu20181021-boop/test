@@ -7,9 +7,9 @@ import { clamp01 } from "./math.js";
 // - Hidden: ReLU
 // - Output: mode scores + 4 continuous heads (pace, danger-avoid, commit, temperature preference)
 
-export const BRAIN_INPUTS = 20;
+export const BRAIN_INPUTS = 25;
 export const BRAIN_HIDDEN = 10;
-export const BRAIN_MODES = ["rest", "wander", "food", "flee", "mate", "hunt", "parenting"];
+export const BRAIN_MODES = ["rest", "wander", "food", "flee", "mate", "hunt", "expedition", "parenting"];
 export const BRAIN_MODE_COUNT = BRAIN_MODES.length;
 export const BRAIN_OUTPUTS = BRAIN_MODE_COUNT + 4;
 export const BRAIN_OUT_PACE = BRAIN_MODE_COUNT + 0; // 0..1 (sigmoid)
@@ -127,7 +127,7 @@ export function forwardBrain({ brain, inputs, hiddenOut, outputsOut }) {
 }
 
 // One-step policy gradient update (REINFORCE) for a small discrete action set.
-// - Uses the brain's mode logits at `actionOutIdxs` (typically 3 actions).
+// - Uses the brain's mode logits at `actionOutIdxs` (typically 3-4 actions).
 // - `baseLogits` are added to logits for sampling, but are not learnable.
 // - Updates are done in-place on `brain` weights (lamarckism: affects offspring genome).
 export function policyGradientUpdate({
@@ -151,34 +151,53 @@ export function policyGradientUpdate({
   debugOut = null,
 }) {
   if (!brain || !inputs || !hiddenOut || !outputsOut) return false;
-  if (!Array.isArray(actionOutIdxs) || actionOutIdxs.length !== 3) return false;
-  const a0 = actionOutIdxs[0] | 0;
-  const a1 = actionOutIdxs[1] | 0;
-  const a2 = actionOutIdxs[2] | 0;
+  if (!Array.isArray(actionOutIdxs) || actionOutIdxs.length < 2) return false;
+  const actionCount = actionOutIdxs.length | 0;
+  const actionIdxs = new Array(actionCount);
+  for (let i = 0; i < actionCount; i++) actionIdxs[i] = actionOutIdxs[i] | 0;
   const c = chosenAction | 0;
-  if (!(c === 0 || c === 1 || c === 2)) return false;
-  if (!Array.isArray(baseLogits) || baseLogits.length !== 3) return false;
+  if (c < 0 || c >= actionCount) return false;
+  if (!Array.isArray(baseLogits) || baseLogits.length !== actionCount) return false;
 
   const ok = forwardBrain({ brain, inputs, hiddenOut, outputsOut });
   if (!ok) return false;
 
   const ls = clamp(Number(logitScale) || 1, 0.01, 10);
-  const z0 = (Number(baseLogits[0]) || 0) + (Number(outputsOut[a0]) || 0) * ls;
-  const z1 = (Number(baseLogits[1]) || 0) + (Number(outputsOut[a1]) || 0) * ls;
-  const z2 = (Number(baseLogits[2]) || 0) + (Number(outputsOut[a2]) || 0) * ls;
-
   const t = Math.max(1e-3, Number(temperature) || 1);
-  const x0 = z0 / t;
-  const x1 = z1 / t;
-  const x2 = z2 / t;
-  const m = Math.max(x0, x1, x2);
-  const e0 = Math.exp(x0 - m);
-  const e1 = Math.exp(x1 - m);
-  const e2 = Math.exp(x2 - m);
-  const s0 = e0 + e1 + e2;
-  const p0 = s0 > 0 ? e0 / s0 : 1 / 3;
-  const p1 = s0 > 0 ? e1 / s0 : 1 / 3;
-  const p2 = s0 > 0 ? e2 / s0 : 1 / 3;
+  const available = new Array(actionCount);
+  const xs = new Array(actionCount);
+  let m = -Infinity;
+  let availableCount = 0;
+  for (let i = 0; i < actionCount; i++) {
+    const base = Number(baseLogits[i]);
+    const isAvailable = Number.isFinite(base) && base > -1e8;
+    available[i] = isAvailable;
+    if (!isAvailable) {
+      xs[i] = -Infinity;
+      continue;
+    }
+    availableCount += 1;
+    const z = base + (Number(outputsOut[actionIdxs[i]]) || 0) * ls;
+    const x = z / t;
+    xs[i] = x;
+    if (x > m) m = x;
+  }
+
+  const probs = new Array(actionCount).fill(0);
+  if (availableCount <= 0) return false;
+  let expSum = 0;
+  for (let i = 0; i < actionCount; i++) {
+    if (!available[i]) continue;
+    const ex = Math.exp(xs[i] - m);
+    probs[i] = ex;
+    expSum += ex;
+  }
+  if (expSum > 0) {
+    for (let i = 0; i < actionCount; i++) probs[i] = available[i] ? probs[i] / expSum : 0;
+  } else {
+    const p = 1 / availableCount;
+    for (let i = 0; i < actionCount; i++) probs[i] = available[i] ? p : 0;
+  }
 
   const adv = clamp(Number(advantage) || 0, -advClip, advClip);
   const lr = clamp(Number(learningRate) || 0, 0, 1);
@@ -187,9 +206,10 @@ export function policyGradientUpdate({
   // d(log pi)/d(logit) = (onehot - p) / temperature
   const invT = 1 / Math.max(1e-3, Number(temperature) || 1);
   const s = lr * adv * invT * ls;
-  const d0 = ((c === 0 ? 1 : 0) - p0) * s;
-  const d1 = ((c === 1 ? 1 : 0) - p1) * s;
-  const d2 = ((c === 2 ? 1 : 0) - p2) * s;
+  const dActions = new Array(actionCount);
+  for (let i = 0; i < actionCount; i++) {
+    dActions[i] = (((c === i ? 1 : 0) - probs[i]) || 0) * s;
+  }
 
   // Optional: continuous heads as Normal(mean=logit, sigma) in logit space.
   // Adds REINFORCE gradients for those outputs: d(logp)/d(mean) = (sample - mean) / sigma^2.
@@ -221,11 +241,11 @@ export function policyGradientUpdate({
   }
 
   if (debugOut && typeof debugOut === "object") {
-    const m =
-      Array.isArray(debugOut.modeStep) && debugOut.modeStep.length === 3 ? debugOut.modeStep : (debugOut.modeStep = [0, 0, 0]);
-    m[0] = d0;
-    m[1] = d1;
-    m[2] = d2;
+    const modeStep =
+      Array.isArray(debugOut.modeStep) && debugOut.modeStep.length === actionCount
+        ? debugOut.modeStep
+        : (debugOut.modeStep = new Array(actionCount).fill(0));
+    for (let i = 0; i < actionCount; i++) modeStep[i] = dActions[i] || 0;
 
     if (dh) {
       const h =
@@ -250,7 +270,7 @@ export function policyGradientUpdate({
   )
     return false;
 
-  // Backprop only through the updated outputs (the 3 discrete actions + optional continuous heads).
+  // Backprop only through the updated outputs (the selected discrete actions + optional continuous heads).
   const dHidden =
     brain._scratchDHidden instanceof Float32Array && brain._scratchDHidden.length === BRAIN_HIDDEN
       ? brain._scratchDHidden
@@ -263,10 +283,12 @@ export function policyGradientUpdate({
       dHidden[h] = 0;
       continue;
     }
-    const base =
-      (d0 || 0) * (w2[a0 * BRAIN_HIDDEN + h] || 0) +
-      (d1 || 0) * (w2[a1 * BRAIN_HIDDEN + h] || 0) +
-      (d2 || 0) * (w2[a2 * BRAIN_HIDDEN + h] || 0);
+    let base = 0;
+    for (let i = 0; i < actionCount; i++) {
+      const g = dActions[i] || 0;
+      if (!(g !== 0)) continue;
+      base += g * (w2[actionIdxs[i] * BRAIN_HIDDEN + h] || 0);
+    }
     let head = 0;
     if (dh && headOuts) {
       for (let i = 0; i < headCount; i++) {
@@ -278,20 +300,13 @@ export function policyGradientUpdate({
   }
 
   // Update W2, b2
-  if (d0) {
-    const row = a0 * BRAIN_HIDDEN;
-    for (let h = 0; h < BRAIN_HIDDEN; h++) w2[row + h] = clamp((w2[row + h] || 0) + d0 * (hiddenOut[h] || 0), -2, 2);
-    b2[a0] = clamp((b2[a0] || 0) + d0, -1, 1);
-  }
-  if (d1) {
-    const row = a1 * BRAIN_HIDDEN;
-    for (let h = 0; h < BRAIN_HIDDEN; h++) w2[row + h] = clamp((w2[row + h] || 0) + d1 * (hiddenOut[h] || 0), -2, 2);
-    b2[a1] = clamp((b2[a1] || 0) + d1, -1, 1);
-  }
-  if (d2) {
-    const row = a2 * BRAIN_HIDDEN;
-    for (let h = 0; h < BRAIN_HIDDEN; h++) w2[row + h] = clamp((w2[row + h] || 0) + d2 * (hiddenOut[h] || 0), -2, 2);
-    b2[a2] = clamp((b2[a2] || 0) + d2, -1, 1);
+  for (let i = 0; i < actionCount; i++) {
+    const g = dActions[i] || 0;
+    if (!(g !== 0)) continue;
+    const outIdx = actionIdxs[i];
+    const row = outIdx * BRAIN_HIDDEN;
+    for (let h = 0; h < BRAIN_HIDDEN; h++) w2[row + h] = clamp((w2[row + h] || 0) + g * (hiddenOut[h] || 0), -2, 2);
+    b2[outIdx] = clamp((b2[outIdx] || 0) + g, -1, 1);
   }
   if (dh && headOuts) {
     for (let i = 0; i < headCount; i++) {

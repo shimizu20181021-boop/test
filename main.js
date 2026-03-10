@@ -46,14 +46,8 @@ const MACRO_MAP_SIZE_TILES = {
 
 const MACRO_COUPLE_REPRO_PRESET = {
   few: { min: 1, max: 2 },
-  normal: { min: 2, max: 3 },
-  many: { min: 3, max: 5 },
-};
-
-const MACRO_BIRTH_PRESET = {
-  few: { min: 2, max: 3 },
-  normal: { min: 3, max: 5 },
-  many: { min: 4, max: 6 },
+  normal: { min: 3, max: 3 },
+  many: { min: 4, max: 5 },
 };
 
 function macroPresetKey(value, fallbackKey) {
@@ -314,8 +308,9 @@ function stepNnViz(nowMs) {
   nnVizLastSendMs = nowMs;
 
   const selected = macroWorld.entities.find((m) => m && !m._dead && m.id === nnVizTargetId) || null;
+  const selectedDiet = selected ? dietTypeForEntity(selected) : null;
   const label = selected
-    ? `${dietTypeLabel(selected.dietType)} / ${sexLabel(selected.sex)} / ${lifeStageLabel(selected.lifeStage)}`
+    ? `${dietTypeLabel(selectedDiet)} / ${sexLabel(selected.sex)} / ${lifeStageLabel(selected.lifeStage)}`
     : "（不在/死亡）";
 
   nnVizWindow.postMessage(
@@ -333,8 +328,8 @@ function stepNnViz(nowMs) {
         lastUpdateAdvantage: Number(selected?._rlLastUpdateAdvantage) || 0,
         lastUpdateModeStep: Array.isArray(selected?._rlLastUpdateModeStep) ? selected._rlLastUpdateModeStep : null,
         lastUpdateHeadStep: Array.isArray(selected?._rlLastUpdateHeadStep) ? selected._rlLastUpdateHeadStep : null,
-        learnAbsMode: Array.isArray(selected?._rlLearnAbsMode) ? selected._rlLearnAbsMode : null,
-        learnAbsHead: Array.isArray(selected?._rlLearnAbsHead) ? selected._rlLearnAbsHead : null,
+        learnAbsMode: Array.isArray(selected?._rlLearnAbsMode) ? selected._rlLearnAbsMode : [0, 0, 0, 0, 0],
+        learnAbsHead: Array.isArray(selected?._rlLearnAbsHead) ? selected._rlLearnAbsHead : [0, 0, 0, 0],
       },
     },
     "*",
@@ -633,35 +628,23 @@ function applySettings(next) {
 
   if (typeof macroWorld.setDietReproductionConfig === "function") {
     const herbReproKey = macroPresetKey(settings.macroHerbReproPreset, DEFAULT_SETTINGS.macroHerbReproPreset);
-    const herbBirthKey = macroPresetKey(settings.macroHerbBirthPreset, DEFAULT_SETTINGS.macroHerbBirthPreset);
     const omniReproKey = macroPresetKey(settings.macroOmniReproPreset, DEFAULT_SETTINGS.macroOmniReproPreset);
-    const omniBirthKey = macroPresetKey(settings.macroOmniBirthPreset, DEFAULT_SETTINGS.macroOmniBirthPreset);
     const carnReproKey = macroPresetKey(settings.macroCarnReproPreset, DEFAULT_SETTINGS.macroCarnReproPreset);
-    const carnBirthKey = macroPresetKey(settings.macroCarnBirthPreset, DEFAULT_SETTINGS.macroCarnBirthPreset);
 
     const herbRepro = MACRO_COUPLE_REPRO_PRESET[herbReproKey] ?? MACRO_COUPLE_REPRO_PRESET.normal;
-    const herbBirth = MACRO_BIRTH_PRESET[herbBirthKey] ?? MACRO_BIRTH_PRESET.normal;
     const omniRepro = MACRO_COUPLE_REPRO_PRESET[omniReproKey] ?? MACRO_COUPLE_REPRO_PRESET.normal;
-    const omniBirth = MACRO_BIRTH_PRESET[omniBirthKey] ?? MACRO_BIRTH_PRESET.normal;
     const carnRepro = MACRO_COUPLE_REPRO_PRESET[carnReproKey] ?? MACRO_COUPLE_REPRO_PRESET.normal;
-    const carnBirth = MACRO_BIRTH_PRESET[carnBirthKey] ?? MACRO_BIRTH_PRESET.normal;
 
     macroWorld.setDietReproductionConfig({
       herbivore: {
-        birthMin: herbBirth.min,
-        birthMax: herbBirth.max,
         reproMin: herbRepro.min,
         reproMax: herbRepro.max,
       },
       omnivore: {
-        birthMin: omniBirth.min,
-        birthMax: omniBirth.max,
         reproMin: omniRepro.min,
         reproMax: omniRepro.max,
       },
       carnivore: {
-        birthMin: carnBirth.min,
-        birthMax: carnBirth.max,
         reproMin: carnRepro.min,
         reproMax: carnRepro.max,
       },

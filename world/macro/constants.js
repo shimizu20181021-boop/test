@@ -121,6 +121,10 @@ export const FLEE_RANGE_TILES = 10;
 export const FLEE_LOCK_SECONDS = 1.2;
 
 export const FOOD_TARGET_LOCK_SECONDS = 1.25;
+export const EXPEDITION_RESOURCE_SCAN_TILES = 10;
+export const EXPEDITION_SAMPLE_MIN_TILES = 20;
+export const EXPEDITION_SAMPLE_MAX_TILES = 30;
+export const EXPEDITION_FAILSAFE_SECONDS = 20;
 
 // Learning: fear from being attacked. When fear is active, non-carnivores flee if a carnivore is nearby.
 export const FEAR_MAX_SECONDS = 30;

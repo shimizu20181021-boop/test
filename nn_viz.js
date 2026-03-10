@@ -1,4 +1,4 @@
-import {
+﻿import {
   BRAIN_HIDDEN,
   BRAIN_INPUTS,
   BRAIN_MODES,
@@ -16,16 +16,19 @@ const ctx = canvas.getContext("2d");
 
 const NODE_R = 8;
 const LABEL_FONT = "11px system-ui, -apple-system, Segoe UI, sans-serif";
+const OUTPUT_GLOW_SECONDS = 10;
+const ACTION_UPDATE_FLASH_EPS = 1e-6;
+const HEAD_UPDATE_FLASH_EPS = 1e-6;
 
 const INPUT_LABELS = [
   "体力",
-  "空腹（不足）",
+  "空腹必要度",
   "スタミナ",
   "恐怖",
-  "発情",
+  "暑さ",
   "雌",
-  "食べ物あり",
-  "食べ物距離",
+  "食料あり",
+  "食料距離",
   "獲物あり",
   "獲物距離",
   "子育て",
@@ -37,7 +40,12 @@ const INPUT_LABELS = [
   "外気温",
   "体温",
   "毛皮",
-  "陣地耐性",
+  "陣地温度耐性",
+  "周辺資源",
+  "候補地資源",
+  "資源不足",
+  "群れ空腹必要度",
+  "群れ人数",
 ];
 
 const OUTPUT_LABELS_FULL = [...BRAIN_MODES, "pace", "danger", "commit", "tempBias"];
@@ -47,8 +55,9 @@ const OUTPUT_LABELS_FULL_JA = [
     if (m === "wander") return "徘徊";
     if (m === "food") return "食事";
     if (m === "flee") return "逃走";
-    if (m === "mate") return "交尾";
+    if (m === "mate") return "交配";
     if (m === "hunt") return "狩り";
+    if (m === "expedition") return "遠征";
     if (m === "parenting") return "子育て";
     return String(m || "");
   }),
@@ -57,10 +66,15 @@ const OUTPUT_LABELS_FULL_JA = [
   "決定維持",
   "温度指向",
 ];
-const OUTPUT_IDXS_COMPACT = [
+const COMPACT_ACTION_MODE_IDXS = [
   BRAIN_MODES.indexOf("rest"),
   BRAIN_MODES.indexOf("wander"),
   BRAIN_MODES.indexOf("food"),
+  BRAIN_MODES.indexOf("hunt"),
+  BRAIN_MODES.indexOf("expedition"),
+];
+const OUTPUT_IDXS_COMPACT = [
+  ...COMPACT_ACTION_MODE_IDXS,
   BRAIN_OUT_PACE,
   BRAIN_OUT_DANGER,
   BRAIN_OUT_COMMIT,
@@ -90,6 +104,33 @@ function rgba(r, g, b, a) {
   return `rgba(${r},${g},${b},${aa})`;
 }
 
+function collectUpdatedOutputMeta(rl, outputsMode) {
+  const items = [];
+  const modeStep = Array.isArray(rl?.lastUpdateModeStep) ? rl.lastUpdateModeStep : null;
+  if (modeStep && modeStep.length >= COMPACT_ACTION_MODE_IDXS.length) {
+    for (let actionSlot = 0; actionSlot < COMPACT_ACTION_MODE_IDXS.length; actionSlot++) {
+      const step = Number(modeStep[actionSlot]) || 0;
+      if (Math.abs(step) <= ACTION_UPDATE_FLASH_EPS) continue;
+      const fullIdx = OUTPUT_IDXS_COMPACT[actionSlot];
+      const renderedIdx = outputsMode === "full" ? fullIdx : actionSlot;
+      if (fullIdx >= 0 && renderedIdx >= 0) items.push({ fullIdx, renderedIdx, sign: step >= 0 ? 1 : -1 });
+    }
+  }
+
+  const headStep = Array.isArray(rl?.lastUpdateHeadStep) ? rl.lastUpdateHeadStep : null;
+  const headFullIdxs = [BRAIN_OUT_PACE, BRAIN_OUT_DANGER, BRAIN_OUT_COMMIT, BRAIN_OUT_TEMP_BIAS];
+  if (headStep && headStep.length >= 4) {
+    for (let headSlot = 0; headSlot < 4; headSlot++) {
+      const step = Number(headStep[headSlot]) || 0;
+      if (Math.abs(step) <= HEAD_UPDATE_FLASH_EPS) continue;
+      const fullIdx = headFullIdxs[headSlot];
+      const renderedIdx = outputsMode === "full" ? fullIdx : COMPACT_ACTION_MODE_IDXS.length + headSlot;
+      items.push({ fullIdx, renderedIdx, sign: step >= 0 ? 1 : -1 });
+    }
+  }
+  return items;
+}
+
 function resize() {
   const dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
   const rect = canvas.getBoundingClientRect();
@@ -110,8 +151,8 @@ let state = null;
 
 let lastUpdateCounter = 0;
 let flashT = 0;
-let flashSign = 1;
-let flashAction = null;
+let lastFrameTime = 0;
+const outputGlowState = OUTPUT_LABELS_FULL.map(() => ({ t: 0, sign: 1 }));
 
 let cachedPadX = 64;
 let cachedPadXMode = null;
@@ -188,10 +229,41 @@ function nodePulse({ blinkMode, t, idx, strength01 }) {
   return 0.35 + 0.65 * (0.25 + 0.75 * wave) * (0.5 + 0.5 * s);
 }
 
-function drawNode({ x, y, r, value01, idx, blinkMode, t, flash, label, labelSide }) {
+function fullOutputIdxFromRenderedIdx(outputsMode, idx) {
+  if (outputsMode === "full") return idx;
+  return OUTPUT_IDXS_COMPACT[idx] ?? -1;
+}
+
+function addOutputGlow(fullIdx, sign) {
+  const idx = Number(fullIdx);
+  if (!(idx >= 0 && idx < outputGlowState.length)) return;
+  outputGlowState[idx].t = 1;
+  outputGlowState[idx].sign = sign >= 0 ? 1 : -1;
+}
+
+function advanceOutputGlow(dt) {
+  const step = Math.max(0, Number(dt) || 0) / Math.max(0.001, OUTPUT_GLOW_SECONDS);
+  if (step <= 0) return;
+  for (const entry of outputGlowState) {
+    if (!entry) continue;
+    entry.t = Math.max(0, (Number(entry.t) || 0) - step);
+  }
+}
+
+function drawNode({ x, y, r, value01, idx, blinkMode, t, flash, glow, label, labelSide }) {
   const v = clamp01(value01);
   const pulse = nodePulse({ blinkMode, t, idx, strength01: v });
   const alpha = v * pulse;
+
+  if (glow && glow.t > 0) {
+    const gg = clamp01(glow.t);
+    const glowRgb = glow.sign >= 0 ? [80, 255, 140] : [255, 90, 90];
+    ctx.beginPath();
+    ctx.arc(x, y, r + 7, 0, Math.PI * 2);
+    ctx.fillStyle = rgba(glowRgb[0], glowRgb[1], glowRgb[2], gg * 0.12);
+    ctx.fill();
+  }
+
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fillStyle = rgba(63, 208, 255, 0.12 + alpha * 0.85);
@@ -200,6 +272,14 @@ function drawNode({ x, y, r, value01, idx, blinkMode, t, flash, label, labelSide
   ctx.lineWidth = 1;
   ctx.strokeStyle = rgba(255, 255, 255, 0.12 + alpha * 0.25);
   ctx.stroke();
+
+  if (glow && glow.t > 0) {
+    const gg = clamp01(glow.t);
+    const glowRgb = glow.sign >= 0 ? [80, 255, 140] : [255, 90, 90];
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = rgba(glowRgb[0], glowRgb[1], glowRgb[2], gg * 0.75);
+    ctx.stroke();
+  }
 
   if (flash && flash.t > 0) {
     ctx.lineWidth = 3;
@@ -229,7 +309,11 @@ function draw() {
   ctx.clearRect(0, 0, width, height);
 
   const t = performance.now() / 1000;
+  if (lastFrameTime <= 0) lastFrameTime = t;
+  const dt = Math.max(0, Math.min(0.1, t - lastFrameTime));
+  lastFrameTime = t;
   flashT = Math.max(0, flashT - 1.8 * (1 / 60));
+  advanceOutputGlow(dt);
 
   const outputsMode = config.outputsMode === "full" ? "full" : "compact";
   const blinkMode = config.blinkMode === "always" ? "always" : "flash";
@@ -266,26 +350,17 @@ function draw() {
     }
   }
 
-  // Flash edges toward the updated outputs (learning targets: rest/wander/food + pace/danger/commit).
+  // Flash edges toward the updated outputs (learning targets: rest/wander/food/hunt + heads).
   const flashActive = blinkMode === "flash" && flashT > 0.001;
-  const flashOutIdxs = [];
-  if (flashActive) {
-    if (flashAction != null) {
-      const flashOutLabel = flashAction === 0 ? "rest" : flashAction === 1 ? "wander" : "food";
-      const actionIdx = outputsMode === "full" ? OUTPUT_LABELS_FULL.indexOf(flashOutLabel) : flashAction;
-      if (actionIdx != null && actionIdx >= 0) flashOutIdxs.push(actionIdx);
-    }
+  const flashOutputMeta = flashActive ? collectUpdatedOutputMeta(state?.rl, outputsMode) : [];
+  const flashOutputMap = new Map(flashOutputMeta.map((entry) => [entry.renderedIdx, entry]));
 
-    if (outputsMode === "full") flashOutIdxs.push(BRAIN_OUT_PACE, BRAIN_OUT_DANGER, BRAIN_OUT_COMMIT, BRAIN_OUT_TEMP_BIAS);
-    else flashOutIdxs.push(3, 4, 5, 6);
-  }
-
-  if (flashActive && flashOutIdxs.length > 0) {
-    const flashRgb = flashSign >= 0 ? [80, 255, 140] : [255, 90, 90];
+  if (flashActive && flashOutputMeta.length > 0) {
     if (hidden) {
-      for (const outIdx of flashOutIdxs) {
-        const nO = layout.outputs[outIdx] || null;
+      for (const entry of flashOutputMeta) {
+        const nO = layout.outputs[entry.renderedIdx] || null;
         if (!nO) continue;
+        const flashRgb = entry.sign >= 0 ? [80, 255, 140] : [255, 90, 90];
         for (const nH of layout.hidden) {
           const hv01 = hiddenTo01(hidden[nH.i]);
           if (hv01 <= 0.01) continue;
@@ -313,15 +388,13 @@ function draw() {
     outputsMode === "full" ? OUTPUT_LABELS_FULL_JA : OUTPUT_IDXS_COMPACT.map((idx) => OUTPUT_LABELS_FULL_JA[idx]);
   if (outputs && outputs.length >= OUTPUT_LABELS_FULL.length) {
     if (outputsMode === "compact") {
-      const modeLogits = [outputs[OUTPUT_IDXS_COMPACT[0]], outputs[OUTPUT_IDXS_COMPACT[1]], outputs[OUTPUT_IDXS_COMPACT[2]]];
+      const modeLogits = COMPACT_ACTION_MODE_IDXS.map((idx) => outputs[idx]);
       const p = softmax(modeLogits);
-      outVals[0] = clamp01(p[0]);
-      outVals[1] = clamp01(p[1]);
-      outVals[2] = clamp01(p[2]);
-      outVals[3] = decodeBrain01(outputs[BRAIN_OUT_PACE]);
-      outVals[4] = decodeBrain01(outputs[BRAIN_OUT_DANGER]);
-      outVals[5] = decodeBrain01(outputs[BRAIN_OUT_COMMIT]);
-      outVals[6] = decodeBrain01(outputs[BRAIN_OUT_TEMP_BIAS]);
+      for (let i = 0; i < COMPACT_ACTION_MODE_IDXS.length; i++) outVals[i] = clamp01(p[i]);
+      outVals[COMPACT_ACTION_MODE_IDXS.length + 0] = decodeBrain01(outputs[BRAIN_OUT_PACE]);
+      outVals[COMPACT_ACTION_MODE_IDXS.length + 1] = decodeBrain01(outputs[BRAIN_OUT_DANGER]);
+      outVals[COMPACT_ACTION_MODE_IDXS.length + 2] = decodeBrain01(outputs[BRAIN_OUT_COMMIT]);
+      outVals[COMPACT_ACTION_MODE_IDXS.length + 3] = decodeBrain01(outputs[BRAIN_OUT_TEMP_BIAS]);
     } else {
       const modeLogits = [];
       for (let i = 0; i < BRAIN_MODES.length; i++) modeLogits.push(outputs[i]);
@@ -345,6 +418,7 @@ function draw() {
       blinkMode,
       t,
       flash: null,
+      glow: null,
       label: INPUT_LABELS[nIn.i] || `in${nIn.i}`,
       labelSide: "left",
     });
@@ -360,6 +434,7 @@ function draw() {
       blinkMode,
       t,
       flash: null,
+      glow: null,
       label: `h${nH.i + 1}`,
       labelSide: "right",
     });
@@ -367,13 +442,8 @@ function draw() {
 
   for (const nO of layout.outputs) {
     const idx = nO.i;
-    const isUpdated =
-      blinkMode === "flash" &&
-      flashT > 0.001 &&
-      flashOutIdxs.length > 0 &&
-      flashOutIdxs.includes(idx);
-
-    const rgb = flashSign >= 0 ? [80, 255, 140] : [255, 90, 90];
+    const flashMeta = blinkMode === "flash" && flashT > 0.001 ? flashOutputMap.get(idx) || null : null;
+    const glowState = outputGlowState[fullOutputIdxFromRenderedIdx(outputsMode, idx)] || null;
     drawNode({
       x: nO.x,
       y: nO.y,
@@ -382,7 +452,8 @@ function draw() {
       idx: 200 + idx,
       blinkMode,
       t,
-      flash: isUpdated ? { t: flashT, rgb } : null,
+      flash: flashMeta ? { t: flashT, rgb: flashMeta.sign >= 0 ? [80, 255, 140] : [255, 90, 90] } : null,
+      glow: glowState,
       label: outLabels[idx] || `out${idx}`,
       labelSide: "right",
     });
@@ -394,85 +465,82 @@ function draw() {
     ctx.fillStyle = rgba(255, 255, 255, 0.55);
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("データ待ち（生物をクリック）", width / 2, height / 2);
+    ctx.fillText("マクロ画面で個体をクリックしてください", width / 2, height / 2);
   }
 }
 
 function updateHeader() {
   const id = state?.entity?.id;
   const label = state?.entity?.label;
-  const modeText = config.outputsMode === "full" ? "全モード" : "3択";
-  const blinkText = config.blinkMode === "always" ? "常時点滅" : "更新フラッシュ";
-  subtitle.textContent = id != null ? `対象: ${label || "-"}（id=${id}） / 表示:${modeText} / 点滅:${blinkText}` : "マクロ視点で生物をクリックしてください";
+  const modeText = config.outputsMode === "full" ? "全モード" : "5択";
+  const blinkText = config.blinkMode === "always" ? "常時点滅" : "更新時フラッシュ";
+  subtitle.textContent =
+    id != null
+      ? `対象: ${label || "-"} (id=${id}) / 表示:${modeText} / 点滅:${blinkText}`
+      : "マクロ画面で個体をクリックしてください";
 
   if (!status) return;
+
   const upd = Number(state?.rl?.updateCounter) || 0;
   const reward = state?.rl?.lastUpdateReward;
   const baseline = state?.rl?.lastUpdateBaseline;
   const adv = Number(state?.rl?.lastUpdateAdvantage) || 0;
   const act = state?.rl?.lastUpdateAction;
-  const aLabel = act === 0 ? "休息" : act === 1 ? "徘徊" : act === 2 ? "食事" : "-";
+  const actionLabels = ["休息", "徘徊", "食事", "狩り", "遠征"];
+  const aLabel = Number.isInteger(act) && act >= 0 && act < actionLabels.length ? actionLabels[act] : "-";
 
   const learnAbsMode = Array.isArray(state?.rl?.learnAbsMode) ? state.rl.learnAbsMode : null;
   const learnAbsHead = Array.isArray(state?.rl?.learnAbsHead) ? state.rl.learnAbsHead : null;
-  const fmt = (v) => {
+
+  const fmtSigned = (v) => {
     if (typeof v !== "number" || !Number.isFinite(v)) return "-";
     return `${v >= 0 ? "+" : ""}${v.toFixed(4)}`;
   };
-  const fmtU = (v) => {
+  const fmtMagnitude = (v) => {
     if (typeof v !== "number" || !Number.isFinite(v)) return "-";
     const n = Math.abs(v);
-    if (n < 0.01) return `${v.toFixed(4)}`;
-    if (n < 0.1) return `${v.toFixed(3)}`;
-    return `${v.toFixed(2)}`;
+    if (n < 0.01) return v.toFixed(4);
+    if (n < 0.1) return v.toFixed(3);
+    return v.toFixed(2);
   };
   const fmtPct0 = (v) => {
     if (typeof v !== "number" || !Number.isFinite(v)) return "-";
     return `${Math.max(0, Math.min(100, Math.round(v * 100)))}`;
   };
 
-  const lines = [`更新:${upd}`, `報酬:${fmt(reward)}`, `ベースライン:${fmt(baseline)}`, `優位:${fmt(adv)}`, `行動:${aLabel}`];
-  if (learnAbsMode && learnAbsMode.length === 3) {
-    const a0 = Number(learnAbsMode[0]) || 0;
-    const a1 = Number(learnAbsMode[1]) || 0;
-    const a2 = Number(learnAbsMode[2]) || 0;
-    const sum = a0 + a1 + a2;
-    const p0 = sum > 0 ? a0 / sum : 0;
-    const p1 = sum > 0 ? a1 / sum : 0;
-    const p2 = sum > 0 ? a2 / sum : 0;
-    lines.push(`学習累計: 休息${fmtU(a0)} / 徘徊${fmtU(a1)} / 食事${fmtU(a2)}`);
-    if (sum > 0) lines.push(`学習比率: 休息${fmtPct0(p0)}% / 徘徊${fmtPct0(p1)}% / 食事${fmtPct0(p2)}%`);
-  }
-  if (learnAbsHead && learnAbsHead.length === 4) {
-    const a0 = Number(learnAbsHead[0]) || 0;
-    const a1 = Number(learnAbsHead[1]) || 0;
-    const a2 = Number(learnAbsHead[2]) || 0;
-    const a3 = Number(learnAbsHead[3]) || 0;
-    const sum = a0 + a1 + a2 + a3;
-    const p0 = sum > 0 ? a0 / sum : 0;
-    const p1 = sum > 0 ? a1 / sum : 0;
-    const p2 = sum > 0 ? a2 / sum : 0;
-    const p3 = sum > 0 ? a3 / sum : 0;
-    lines.push(`学習累計(head): 速度${fmtU(a0)} / 危険回避${fmtU(a1)} / 決定維持${fmtU(a2)} / 温度指向${fmtU(a3)}`);
-    if (sum > 0)
+  const lines = [
+    `更新:${upd}` ,
+    `報酬:${fmtSigned(reward)}` ,
+    `ベースライン:${fmtSigned(baseline)}` ,
+    `優位:${fmtSigned(adv)}` ,
+    `行動:${aLabel}` ,
+  ];
+
+  if (learnAbsMode && learnAbsMode.length >= actionLabels.length) {
+    const actionVals = actionLabels.map((_, idx) => Number(learnAbsMode[idx]) || 0);
+    const sum = actionVals.reduce((acc, value) => acc + value, 0);
+    lines.push(`学習累計: ${actionLabels.map((labelText, idx) => `${labelText}${fmtMagnitude(actionVals[idx])}`).join(" / ")}`);
+    if (sum > 0) {
       lines.push(
-        `学習比率(head): 速度${fmtPct0(p0)}% / 危険回避${fmtPct0(p1)}% / 決定維持${fmtPct0(p2)}% / 温度指向${fmtPct0(p3)}%`,
+        `学習比率: ${actionLabels.map((labelText, idx) => `${labelText}${fmtPct0(actionVals[idx] / sum)}%`).join(" / ")}`
       );
-  } else if (learnAbsHead && learnAbsHead.length === 3) {
-    const a0 = Number(learnAbsHead[0]) || 0;
-    const a1 = Number(learnAbsHead[1]) || 0;
-    const a2 = Number(learnAbsHead[2]) || 0;
-    const sum = a0 + a1 + a2;
-    const p0 = sum > 0 ? a0 / sum : 0;
-    const p1 = sum > 0 ? a1 / sum : 0;
-    const p2 = sum > 0 ? a2 / sum : 0;
-    lines.push(`学習累計(head): 速度${fmtU(a0)} / 危険回避${fmtU(a1)} / 決定維持${fmtU(a2)}`);
-    if (sum > 0)
-      lines.push(`学習比率(head): 速度${fmtPct0(p0)}% / 危険回避${fmtPct0(p1)}% / 決定維持${fmtPct0(p2)}%`);
+    }
   }
+
+  if (learnAbsHead && learnAbsHead.length >= 4) {
+    const headLabels = ["速度", "危険回避", "決定維持", "温度指向"];
+    const headVals = headLabels.map((_, idx) => Number(learnAbsHead[idx]) || 0);
+    const sum = headVals.reduce((acc, value) => acc + value, 0);
+    lines.push(`学習累計(head): ${headLabels.map((labelText, idx) => `${labelText}${fmtMagnitude(headVals[idx])}`).join(" / ")}`);
+    if (sum > 0) {
+      lines.push(
+        `学習比率(head): ${headLabels.map((labelText, idx) => `${labelText}${fmtPct0(headVals[idx] / sum)}%`).join(" / ")}`
+      );
+    }
+  }
+
   status.textContent = lines.join("\n");
 }
-
 window.addEventListener("message", (ev) => {
   const msg = ev?.data;
   if (!msg || typeof msg !== "object") return;
@@ -490,12 +558,8 @@ window.addEventListener("message", (ev) => {
     const counter = Number(state?.rl?.updateCounter) || 0;
     if (counter !== lastUpdateCounter) {
       lastUpdateCounter = counter;
-      const adv = Number(state?.rl?.lastUpdateAdvantage) || 0;
-      flashSign = adv >= 0 ? 1 : -1;
-      flashAction =
-        state?.rl?.lastUpdateAction === 0 || state?.rl?.lastUpdateAction === 1 || state?.rl?.lastUpdateAction === 2
-          ? state.rl.lastUpdateAction
-          : null;
+      const updatedOutputs = collectUpdatedOutputMeta(state?.rl, "full");
+      for (const entry of updatedOutputs) addOutputGlow(entry.fullIdx, entry.sign);
       flashT = 1;
     }
     updateHeader();

@@ -7,6 +7,7 @@ import {
   PLANT_ANIM_FRAME_COUNT,
   TERRITORY_ALPHA_BY_LEVEL,
 } from "../world/macro/constants.js";
+import { normalizePlantVisualId, plantAnimFileForVisualId, plantStillFileForVisualId } from "../world/macro/plants.js";
 import { WeatherFx } from "./weather_fx.js";
 
 const MACRO_TILE_ASSETS = {
@@ -59,6 +60,11 @@ const MACRO_EGG_SPRITE_URL_BY_DESIGN = {
   omn_crow: `${MACRO_OBJECT_ASSET_BASE}/カラスの卵.png`,
   pred_owl: `${MACRO_OBJECT_ASSET_BASE}/フクロウの卵.png`,
 };
+const MACRO_MEAT_SPRITE_URL_BY_DIET = {
+  herbivore: `${MACRO_OBJECT_ASSET_BASE}/草食の肉.png`,
+  omnivore: `${MACRO_OBJECT_ASSET_BASE}/雑食の肉.png`,
+  carnivore: `${MACRO_OBJECT_ASSET_BASE}/肉食の肉.png`,
+};
 
 const MOVE_ANIM_FRAME_COUNT = 7;
 const MOVE_ANIM_TARGET_SIZE = 256;
@@ -99,6 +105,23 @@ const ATTACK_ANIM_STAGE_JP = {
   adult: "大人",
 };
 
+const EAT_ANIM_FRAME_COUNT = 7;
+const EAT_ANIM_SECONDS = 0.45;
+const EAT_ANIM_BY_DESIGN = {
+  herb_pig: { dietDir: "草食", species: "豚" },
+  herb_horse: { dietDir: "草食", species: "馬" },
+  herb_zebra: { dietDir: "草食", species: "シマウマ" },
+  herb_pigeon: { dietDir: "草食", species: "ハト" },
+  omn_mouse: { dietDir: "雑食", species: "ネズミ" },
+  omn_boar: { dietDir: "雑食", species: "イノシシ" },
+  omn_crow: { dietDir: "雑食", species: "カラス" },
+  omn_cat: { dietDir: "草食", species: "猫" },
+  pred_raccoon: { dietDir: "雑食", species: "アライグマ" },
+  pred_wolf: { dietDir: "肉食", species: "オオカミ" },
+  pred_bear: { dietDir: "肉食", species: "クマ" },
+  pred_owl: { dietDir: "肉食", species: "フクロウ" },
+  pred_lion: { dietDir: "肉食", species: "ライオン" },
+};
 const PLANT_ANIM_SEARCH_RADIUS = 96;
 
 function moveAnimSheetUrl(designId, sex, stage) {
@@ -126,6 +149,19 @@ function attackAnimSheetUrl(designId, sex, stage) {
   const dd = String(spec.dietDir || "");
   if (!sp || !dd) return "";
   return `${MACRO_ANIM_ASSET_BASE}/${dd}/${sp}/攻撃/${sp}${sexJp}_${stageJp}.png`;
+}
+
+function eatAnimSheetUrl(designId, sex, stage) {
+  const id = String(designId || "");
+  const spec = EAT_ANIM_BY_DESIGN[id];
+  if (!spec) return "";
+  const stageKey = String(stage || "adult");
+  const stageJp = MOVE_ANIM_STAGE_JP[stageKey] || MOVE_ANIM_STAGE_JP.adult;
+  const sexJp = String(sex || "male") === "female" ? "雌" : "雄";
+  const sp = String(spec.species || "");
+  const dd = String(spec.dietDir || "");
+  if (!sp || !dd) return "";
+  return `${MACRO_ANIM_ASSET_BASE}/${dd}/${sp}/食事/${sp}${sexJp}_${stageJp}.png`;
 }
 
 const _imageAssetCache = new Map();
@@ -2075,8 +2111,28 @@ function drawMinimap(ctx, macroWorld, camera, minimapSize, viewportW, viewportH)
   ctx.restore();
 }
 
-function drawMacroMeat(ctx, x, y, r, variant) {
+function drawMacroMeat(ctx, macro, x, y, r, variant) {
   const rot = variant?.rotation ?? 0;
+  const drawable = getTrimmedSquareSpriteAsset(meatSpriteUrlForMacro(macro), {
+    targetSize: 256,
+    alphaThreshold: 8,
+    paddingPct: 0.08,
+  });
+  if (drawable) {
+    const { w: iw, h: ih } = drawableSize(drawable);
+    const targetH = Math.max(8, r * MEAT_SPRITE_H_PER_RADIUS);
+    const s = targetH / Math.max(1, ih);
+    const dw = iw * s;
+    const dh = targetH;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.drawImage(drawable, -dw * 0.5, -dh * MEAT_SPRITE_ANCHOR_Y, dw, dh);
+    ctx.restore();
+    return;
+  }
+
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(rot);
@@ -2353,6 +2409,15 @@ function eggSpriteUrlForMacro(macro) {
   return MACRO_EGG_SPRITE_URL_BY_DESIGN[designId] || "";
 }
 
+function meatSpriteUrlForMacro(macro) {
+  const dietType = String(macro?.meatDietType || macro?.sourceDietType || "").toLowerCase();
+  return MACRO_MEAT_SPRITE_URL_BY_DIET[dietType] || "";
+}
+
+function plantVisualIdFromMacro(macro) {
+  return normalizePlantVisualId(macro?.variant?.plantVisualId ?? macro?.variant?.plantSpriteIndex ?? macro?.plantSpriteIndex ?? "1");
+}
+
 const CREATURE_SPRITE_H_PER_RADIUS = 3.2;
 const CREATURE_SPRITE_ANCHOR_Y = 0.62;
 const PLANT_SPRITE_H_PER_RADIUS = 3.1;
@@ -2361,6 +2426,8 @@ const NEST_SPRITE_H_PER_RADIUS = 2.55;
 const NEST_SPRITE_ANCHOR_Y = 0.58;
 const EGG_SPRITE_H_PER_RADIUS = 2.45;
 const EGG_SPRITE_ANCHOR_Y = 0.57;
+const MEAT_SPRITE_H_PER_RADIUS = 4.1;
+const MEAT_SPRITE_ANCHOR_Y = 0.58;
 
 function getMacroAttackAnimDrawable(macro, designId, sex, stage) {
   const remaining = clamp(Number(macro?.attackAnimSeconds) || 0, 0, ATTACK_ANIM_SECONDS);
@@ -2384,8 +2451,37 @@ function getMacroAttackAnimDrawable(macro, designId, sex, stage) {
   return frames[idx] || frames[frames.length - 1] || null;
 }
 
+function getMacroEatAnimDrawable(macro, designId, sex, stage) {
+  const remaining = clamp(Number(macro?.eatFxSeconds) || 0, 0, EAT_ANIM_SECONDS);
+  const eatType = String(macro?.eatFxType || "");
+  if (remaining <= 0 || (eatType !== "plant" && eatType !== "meat")) return null;
+  const url = eatAnimSheetUrl(designId, sex, stage);
+  if (!url) return null;
+  const anim = getSpriteSheetFramesAsset(url, {
+    frameCount: EAT_ANIM_FRAME_COUNT,
+    targetSize: MOVE_ANIM_TARGET_SIZE,
+    alphaThreshold: 8,
+    paddingPct: 0.08,
+    bgMaxThreshold: 12,
+    chromaThreshold: 18,
+    searchRadiusPx: 220,
+    splitMode: "auto",
+  });
+  const frames = Array.isArray(anim?.frames) ? anim.frames.filter(Boolean) : [];
+  if (!frames.length) return null;
+  const progress = 1 - remaining / Math.max(0.0001, EAT_ANIM_SECONDS);
+  const idx = clampInt(Math.floor(progress * frames.length), 0, frames.length - 1);
+  return frames[idx] || frames[frames.length - 1] || null;
+}
+
 function getMacroPlantAnimDrawable(macro, stage, idx, timeSeconds) {
-  const url = plantAnimSheetUrl(stage, idx);
+  const st = Math.max(0, Math.min(2, Math.round(Number(stage == null ? 2 : stage))));
+  const url =
+    st === 0
+      ? `${MACRO_ANIM_ASSET_BASE}/植物/芽.png`
+      : st === 1
+        ? `${MACRO_ANIM_ASSET_BASE}/植物/茎.png`
+        : `${MACRO_ANIM_ASSET_BASE}/植物/${plantAnimFileForVisualId(idx)}`;
   if (!url) return null;
   const anim = getSpriteSheetFramesAsset(url, {
     frameCount: PLANT_ANIM_FRAME_COUNT,
@@ -2428,8 +2524,11 @@ function drawMacroCreatureSprite(ctx, macro, x, y) {
 
   let drawable = null;
   const attackDrawable = getMacroAttackAnimDrawable(macro, designId, sex, stage);
+  const eatDrawable = getMacroEatAnimDrawable(macro, designId, sex, stage);
   if (attackDrawable) {
     drawable = attackDrawable;
+  } else if (eatDrawable) {
+    drawable = eatDrawable;
   } else if (moving) {
     // Moving: prefer sprite-sheet.
     if (animFrames) {
@@ -2474,10 +2573,14 @@ function drawMacroCreatureSprite(ctx, macro, x, y) {
 function drawMacroPlantSprite(ctx, macro, x, y, timeSeconds = 0) {
   if (!macro) return false;
   const stage = Math.max(0, Math.min(2, Math.round(Number(macro.plantStage == null ? 2 : macro.plantStage))));
-  const idxRaw = macro?.variant?.plantSpriteIndex ?? macro?.plantSpriteIndex ?? macro?.id ?? 1;
-  const idx = Math.max(1, Math.min(15, Math.round(Number(idxRaw) || 1)));
-  const url = plantSpriteUrl(stage, idx);
-  const drawable = getMacroPlantAnimDrawable(macro, stage, idx, timeSeconds) || getKeyedDrawableAsset(url);
+  const visualId = plantVisualIdFromMacro(macro);
+  const url =
+    stage === 0
+      ? `${SAMPLE_PLANT_DIR}/芽.png`
+      : stage === 1
+        ? `${SAMPLE_PLANT_DIR}/茎.png`
+        : `${SAMPLE_PLANT_DIR}/${plantStillFileForVisualId(visualId)}`;
+  const drawable = getMacroPlantAnimDrawable(macro, stage, visualId, timeSeconds) || getKeyedDrawableAsset(url);
   if (!drawable) return false;
 
   const { w: iw, h: ih } = drawableSize(drawable);
@@ -3382,8 +3485,7 @@ function drawMacroStats(ctx, macro, x, y) {
 function drawMacroEntity(ctx, macro, { timeSeconds = 0, dtSeconds = 0, macroWorld = null, tileSize = 64 } = {}) {
   const { x, y, radius, kind } = macro;
   const eatT = macro?.eatFxSeconds ?? 0;
-  const bounce = eatT > 0 ? Math.sin(clamp(1 - eatT / 0.45, 0, 1) * Math.PI) * radius * 0.22 : 0;
-  const yy = y - bounce;
+  const yy = y;
 
   if (kind === "rock") {
     drawMacroRock(ctx, x, yy, radius, macro.variant);
@@ -3394,7 +3496,7 @@ function drawMacroEntity(ctx, macro, { timeSeconds = 0, dtSeconds = 0, macroWorl
     return;
   }
   if (kind === "meat") {
-    drawMacroMeat(ctx, x, yy, radius, macro.variant);
+    drawMacroMeat(ctx, macro, x, yy, radius, macro.variant);
     if ((macro.lifeSeconds ?? 0) > 0) {
       drawMacroCooldownArc(ctx, x, yy, radius, macro.lifeSeconds ?? 0, macro.lifeMaxSeconds ?? 1, "rgba(255,255,255,0.35)");
     }

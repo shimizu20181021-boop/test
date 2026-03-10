@@ -42,6 +42,7 @@ export function computeSocialGroups({ entities, gridState, tile, dt, w, h, group
 
   const socialGroupCenters = new Map(); // socialGroupId -> {x,y}
   const socialGroupCenterList = []; // [{id,x,y}]
+  const socialGroups = new Map(); // socialGroupId -> {id, leaderId, memberIds, memberIdxs, size, x, y}
   const groupCapRaw = Number.parseInt(String(groupMaxSize ?? 4), 10);
   const groupCap = groupCapRaw === 8 || groupCapRaw === 12 ? groupCapRaw : 4;
   const groupRadiusPx = SOCIAL_RANGE_TILES * tile;
@@ -105,6 +106,15 @@ export function computeSocialGroups({ entities, gridState, tile, dt, w, h, group
 
     socialGroupCenters.set(gid, { x: cx, y: cy });
     socialGroupCenterList.push({ id: gid, x: cx, y: cy });
+    socialGroups.set(gid, {
+      id: gid,
+      leaderId: leader.id,
+      memberIds: members.map((mi) => entities[mi]?.id).filter((id) => id != null),
+      memberIdxs: [...members],
+      size: members.length,
+      x: cx,
+      y: cy,
+    });
     for (const mi of members) {
       const o = entities[mi];
       if (!o || o._dead) continue;
@@ -124,8 +134,16 @@ export function computeSocialGroups({ entities, gridState, tile, dt, w, h, group
     e.socialGroupId = gid;
     socialGroupCenters.set(gid, { x: e.x, y: e.y });
     socialGroupCenterList.push({ id: gid, x: e.x, y: e.y });
+    socialGroups.set(gid, {
+      id: gid,
+      leaderId: e.id,
+      memberIds: [e.id],
+      memberIdxs: [],
+      size: 1,
+      x: e.x,
+      y: e.y,
+    });
   }
 
-  return { socialGroupCenters, socialGroupCenterList };
+  return { socialGroupCenters, socialGroupCenterList, socialGroups };
 }
-

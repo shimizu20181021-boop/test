@@ -2,20 +2,34 @@ import { clamp } from "../../core/utils.js";
 import {
   BASE_STAT,
   MEAT_LIFESPAN_SECONDS,
-  MEAT_ROT_PLANT_BLOCK_RANGE_TILES,
+  POP_CAP_PLANT,
   PLANT_GROWTH_STAGE_SECONDS,
   PLANT_REGEN_PER_SECOND,
   PLANT_REPRO_COOLDOWN_SECONDS,
-  POP_CAP_PLANT,
   WEATHER_KIND,
 } from "./constants.js";
 import { wrapCoord } from "./geom.js";
 import { clampInt } from "./math.js";
+import { normalizePlantLevel, normalizePlantVisualId, plantHpMaxForLevel, plantLevelFromVisualId } from "./plants.js";
 import { mulberry32, seededFloat } from "./random.js";
 import { applyPlantStageScaling, plantRegenMultiplier, plantStageScale, radiusFromKind } from "./stats.js";
 
 export function stepPlantEntity({ world, entity, dt, tile, w, h, tw, th, weatherKind, plantReproMax, popCounts, plantTileCounts, spawned }) {
   const e = entity;
+  if (e.plantLevel == null) {
+    const visualId = normalizePlantVisualId(e?.variant?.plantVisualId ?? e?.variant?.plantSpriteIndex ?? e?.plantSpriteIndex ?? "1");
+    const level = normalizePlantLevel(plantLevelFromVisualId(visualId));
+    const prevMax = Math.max(1, Number(e.baseHpMax ?? e.hpMax) || 1);
+    const ratio = clamp((Number(e.hp) || prevMax) / prevMax, 0, 1);
+    e.plantLevel = level;
+    if (e.variant && typeof e.variant === "object") {
+      e.variant.plantLevel = level;
+      e.variant.plantVisualId = visualId;
+      e.variant.plantSpriteIndex = visualId;
+    }
+    e.baseHpMax = plantHpMaxForLevel(level);
+    e.hp = Math.max(1, Math.round(e.baseHpMax * ratio));
+  }
   const plantLifeMaxSeconds =
     typeof world?.getPlantLifeMaxSeconds === "function" ? Number(world.getPlantLifeMaxSeconds()) || 0 : 0;
   if (plantLifeMaxSeconds > 0) {
@@ -118,7 +132,6 @@ export function stepPlantEntity({ world, entity, dt, tile, w, h, tw, th, weather
             groupId: `plant:seed:${e.id}:${Date.now()}`,
             reincarnation: null,
             rng,
-            variantOverride: e.variant,
           });
           seedPlant.generation = clampInt((Number(e.generation) || 1) + 1, 1, 9999);
           seedPlant.plantStage = 0;
@@ -153,65 +166,6 @@ export function stepMeatEntity({ world, entity, dt, tile, w, h, tw, th, meatRotE
   }
 
   if (meatRotEnabled && (e.lifeSeconds ?? 0) <= 0) {
-    // Rot -> soil nutrition -> sometimes spawns a plant.
-    const px = wrapCoord(e.x, w);
-    const py = wrapCoord(e.y, h);
-    const tx0 = clampInt(Math.floor(px / tile), 0, tw - 1);
-    const ty0 = clampInt(Math.floor(py / tile), 0, th - 1);
-
-    let hasPlantNearby = false;
-    for (let dy = -MEAT_ROT_PLANT_BLOCK_RANGE_TILES; dy <= MEAT_ROT_PLANT_BLOCK_RANGE_TILES && !hasPlantNearby; dy++) {
-      for (let dx = -MEAT_ROT_PLANT_BLOCK_RANGE_TILES; dx <= MEAT_ROT_PLANT_BLOCK_RANGE_TILES; dx++) {
-        if (dx * dx + dy * dy > MEAT_ROT_PLANT_BLOCK_RANGE_TILES * MEAT_ROT_PLANT_BLOCK_RANGE_TILES) continue;
-        const tx = ((tx0 + dx) % tw + tw) % tw;
-        const ty = ((ty0 + dy) % th + th) % th;
-        const key = `${tx},${ty}`;
-        if ((plantTileCounts.get(key) || 0) > 0) {
-          hasPlantNearby = true;
-          break;
-        }
-      }
-    }
-
-    if (
-      !hasPlantNearby &&
-      popCounts.plant < POP_CAP_PLANT &&
-      Math.random() < 1 / 3 &&
-      (!(typeof world?.isPlantableTile === "function") || world.isPlantableTile(tx0, ty0))
-    ) {
-      const seed = (e.id * 2654435761 + Math.floor((e.x + e.y) * 31) + Date.now()) >>> 0;
-      const rng = mulberry32(seed);
-      const baseR = radiusFromKind("plant");
-      const r = clamp(baseR * seededFloat(rng, 0.9, 1.12), 10, baseR * 1.25);
-      const placed = world._placeNear(
-        { x: e.x, y: e.y },
-        r,
-        140,
-        40,
-        seededFloat(rng, 0, Math.PI * 2),
-        seededFloat(rng, 0, 1),
-        true,
-      );
-      const newPlant = world._makeEntity({
-        x: placed.x,
-        y: placed.y,
-        kind: "plant",
-        radius: r,
-        sex: "none",
-        groupId: `plant:soil:${e.id}`,
-        reincarnation: null,
-        rng,
-      });
-      spawned.push(newPlant);
-      popCounts.plant++;
-
-      const ppx = wrapCoord(newPlant.x, w);
-      const ppy = wrapCoord(newPlant.y, h);
-      const ptx = clampInt(Math.floor(ppx / tile), 0, tw - 1);
-      const pty = clampInt(Math.floor(ppy / tile), 0, th - 1);
-      const pkey = `${ptx},${pty}`;
-      plantTileCounts.set(pkey, (plantTileCounts.get(pkey) || 0) + 1);
-    }
     e._dead = true;
   }
 }

@@ -13,6 +13,8 @@ import { dist2Wrapped, wrapDelta } from "./geom.js";
 import { findNearest } from "./spatial.js";
 import { isMacroNonAnimalKind } from "./kinds.js";
 
+const SAME_DIET_MEAT_HUNGER_RECOVER_FRACTION = 0.3;
+
 export function createTryMilk({ entity, mother, isBaby, isChild, milkMode, tile, w, h }) {
   return () => {
     if (!milkMode) return;
@@ -187,8 +189,19 @@ export function computeFoodAndCreateTryEat({
       return;
     }
 
+    const eaterDiet = String(dietNow || "").toLowerCase();
+    const meatDiet = String(food.meatDietType || "").toLowerCase();
+    const sameDietMeat =
+      (meatDiet === "herbivore" || meatDiet === "omnivore" || meatDiet === "carnivore") &&
+      meatDiet === eaterDiet;
+    const hungerRecoverFraction = clamp(
+      sameDietMeat ? SAME_DIET_MEAT_HUNGER_RECOVER_FRACTION : meatHungerRecoverFraction,
+      0,
+      1,
+    );
+
     entity.hunger = clamp(
-      (entity.hunger ?? 0) + (entity.hungerMax ?? 0) * meatHungerRecoverFraction,
+      (entity.hunger ?? 0) + (entity.hungerMax ?? 0) * hungerRecoverFraction,
       0,
       entity.hungerMax ?? 0,
     );

@@ -64,6 +64,7 @@ import { computeSocialGroups } from "./macro/social.js";
 import { pickGenomeForReincarnation } from "./macro/evolution_pool.js";
 import { stepAnimalVitals } from "./macro/animal_vitals.js";
 import { stepAnimalAi } from "./macro/animal_ai.js";
+import { normalizePlantLevel, normalizePlantVisualId, pickPlantVisualIdForLevel, pickWeightedPlantLevel, plantHpMaxForLevel } from "./macro/plants.js";
 import { ensureTerritoryPaintState, pickTerritoryGroupColor, stepTerritoryPaint } from "./macro/territory.js";
 
 let nextMacroId = 1;
@@ -204,17 +205,16 @@ export class MacroWorld {
     this._world = { width: 4096, height: 3072 };
     this._animalCap = 30;
     this._groupMaxSize = 4;
-    this._birthMax = 6;
     this._coupleReproMax = 3;
     this._dietReproductionConfig = {
-      herbivore: { birthMin: 3, birthMax: 5, reproMin: 2, reproMax: 3 },
-      omnivore: { birthMin: 3, birthMax: 5, reproMin: 2, reproMax: 3 },
-      carnivore: { birthMin: 3, birthMax: 5, reproMin: 2, reproMax: 3 },
+      herbivore: { reproMin: 3, reproMax: 3 },
+      omnivore: { reproMin: 3, reproMax: 3 },
+      carnivore: { reproMin: 3, reproMax: 3 },
     };
     this._plantReproMax = 1;
     this._meatHungerRecoverFraction = MEAT_HUNGER_RECOVER_FRACTION;
     this._plantHungerRecoverMul = 1.0;
-    this._meatRotEnabled = true;
+    this._meatRotEnabled = false;
     this._plantStaminaMul = 1.0;
     this._plantLifeMaxSeconds = 0;
     this._herbStaminaMul = 1.0;
@@ -226,7 +226,7 @@ export class MacroWorld {
     this._carnStaminaMul = 1.0;
     this._carnLifeMaxSeconds = BASE_ANIMAL_LIFESPAN_SECONDS;
     this._carnHungerDecayMul = 1.0;
-    this._carnAttackMul = 2.0;
+    this._carnAttackMul = 5.0;
     this._weatherKind = WEATHER_KIND.sunny;
     this._weatherTimerSeconds = 0;
     this._elapsedSeconds = 0;
@@ -253,7 +253,7 @@ export class MacroWorld {
     this._climate = null;
     this._updateClimateState();
 
-    this._evolutionMode = EVOLUTION_MODE.natural;
+    this._evolutionMode = EVOLUTION_MODE.both;
     this._fitnessChildWeight = 60;
     this._naturalGenomePool = new Map(); // dietType -> genome[] (weighted by duplicates)
     this._gaGenomePool = new Map(); // dietType -> { genome, fitness }[] (sorted desc by fitness)
@@ -770,14 +770,6 @@ export class MacroWorld {
     return this._groupMaxSize;
   }
 
-  setBirthMax(max) {
-    this._birthMax = clampInt(max, 2, 10);
-  }
-
-  getBirthMax() {
-    return this._birthMax;
-  }
-
   setCoupleReproMax(max) {
     this._coupleReproMax = clampInt(max, 1, 10);
     for (const e of this.entities) {
@@ -805,21 +797,16 @@ export class MacroWorld {
 
   setDietReproductionConfig(config) {
     const normalize = (input, defaults) => {
-      const birthMin = clampInt(input?.birthMin ?? defaults.birthMin, 2, 10);
-      let birthMax = clampInt(input?.birthMax ?? defaults.birthMax, 2, 10);
-      if (birthMax < birthMin) birthMax = birthMin;
-
       const reproMin = clampInt(input?.reproMin ?? defaults.reproMin, 1, 10);
       let reproMax = clampInt(input?.reproMax ?? defaults.reproMax, 1, 10);
       if (reproMax < reproMin) reproMax = reproMin;
-
-      return { birthMin, birthMax, reproMin, reproMax };
+      return { reproMin, reproMax };
     };
 
     const prev = this._dietReproductionConfig || {
-      herbivore: { birthMin: 3, birthMax: 5, reproMin: 2, reproMax: 3 },
-      omnivore: { birthMin: 3, birthMax: 5, reproMin: 2, reproMax: 3 },
-      carnivore: { birthMin: 3, birthMax: 5, reproMin: 2, reproMax: 3 },
+      herbivore: { reproMin: 3, reproMax: 3 },
+      omnivore: { reproMin: 3, reproMax: 3 },
+      carnivore: { reproMin: 3, reproMax: 3 },
     };
 
     this._dietReproductionConfig = {
@@ -1181,7 +1168,6 @@ export class MacroWorld {
       const count = Math.min(6, remaining);
       if (count <= 0) return;
       const r = radiusFromKind(kind) * seededFloat(rng, 0.75, 1.15);
-      const plantVariant = variantForSex("none");
       for (let i = 0; i < count; i++) {
         const placed = this._placeNear(center, r, 140, 40, seededFloat(rng, 0, Math.PI * 2), seededFloat(rng, 0, 1), true);
         this.entities.push(
@@ -1194,7 +1180,6 @@ export class MacroWorld {
             groupId,
             reincarnation,
             rng,
-            variantOverride: plantVariant,
           }),
         );
       }
@@ -1275,8 +1260,14 @@ export class MacroWorld {
       if (!Number.isFinite(Number(variant.tailScale))) variant.tailScale = 1;
       if (!Number.isFinite(Number(variant.wingScale))) variant.wingScale = 1;
       if (variant.bodyStyle !== "angular" && variant.bodyStyle !== "round") variant.bodyStyle = "round";
-      if (kind === "plant" && (variant.plantSpriteIndex == null || !Number.isFinite(Number(variant.plantSpriteIndex)))) {
-        variant.plantSpriteIndex = seededInt(rng, 1, 15);
+      if (kind === "plant") {
+        const plantLevel = normalizePlantLevel(variant.plantLevel ?? pickWeightedPlantLevel(rng));
+        const plantVisualId = normalizePlantVisualId(
+          variant.plantVisualId ?? variant.plantSpriteIndex ?? pickPlantVisualIdForLevel(plantLevel, rng),
+        );
+        variant.plantLevel = plantLevel;
+        variant.plantVisualId = plantVisualId;
+        variant.plantSpriteIndex = plantVisualId;
       }
       ensureVariantBases(variant);
       refreshVariantBases(variant);
@@ -1290,7 +1281,9 @@ export class MacroWorld {
     const attackDamageBase = stats.attackDamage ?? 0;
     const staminaMul = this.getStaminaMulForDietType(dietType);
     const hpMul = kind === "plant" ? clamp(Number(this._plantStaminaMul) || 1, 0.1, 10) : 1;
-    const hpMax = kind === "plant" ? Math.max(1, Math.round((stats.hpMax ?? BASE_STAT) * hpMul)) : stats.hpMax;
+    const plantLevel = kind === "plant" ? normalizePlantLevel(variant?.plantLevel) : null;
+    const plantBaseHpMax = kind === "plant" ? plantHpMaxForLevel(plantLevel) : stats.hpMax;
+    const hpMax = kind === "plant" ? Math.max(1, Math.round((plantBaseHpMax ?? BASE_STAT) * hpMul)) : stats.hpMax;
     const staminaMax =
       kind === "plant" || kind === "meat" ? stats.staminaMax : Math.max(0, Math.round((stats.staminaMax ?? 0) * staminaMul));
     const lifeMaxSeconds =
@@ -1319,6 +1312,7 @@ export class MacroWorld {
       variant,
       reincarnation,
       genome,
+      plantLevel,
       generation: 1,
       lifeStage,
       born: false,
@@ -1344,7 +1338,7 @@ export class MacroWorld {
         dietType === "herbivore" || dietType === "omnivore" || dietType === "carnivore" ? DIET_IMPRINT_BASE_STRENGTH : 0,
       staminaMul,
       hpMul,
-      baseHpMax: stats.hpMax,
+      baseHpMax: plantBaseHpMax,
       baseHungerMax: stats.hungerMax,
       baseStaminaMax: stats.staminaMax,
       baseRadius: radius,
@@ -1410,7 +1404,8 @@ export class MacroWorld {
     return e;
   }
 
-  _makeMeat({ x, y, groupId }) {
+  _makeMeat({ x, y, groupId, meatDietType = null }) {
+    const dietType = String(meatDietType || "").toLowerCase();
     return {
       id: nextMacroId++,
       x,
@@ -1430,6 +1425,7 @@ export class MacroWorld {
       lifeMaxSeconds: MEAT_LIFESPAN_SECONDS,
       lifeSeconds: MEAT_LIFESPAN_SECONDS,
       ageSeconds: 0,
+      meatDietType: dietType === "herbivore" || dietType === "omnivore" || dietType === "carnivore" ? dietType : null,
       attackDamage: 0,
       attackCooldownSeconds: 0,
       eatCooldownSeconds: 0,
@@ -1512,6 +1508,7 @@ export class MacroWorld {
   }
 
   _spawnMeatFromCorpse(entity, out) {
+    const meatDietType = dietTypeForEntity(entity);
     const count = Math.max(1, Math.floor((entity.hpMax || BASE_STAT) / 50));
     for (let i = 0; i < count; i++) {
       const ang = randFloat(0, Math.PI * 2);
@@ -1523,6 +1520,7 @@ export class MacroWorld {
           x: wrapCoord(entity.x + Math.cos(ang) * dist, w),
           y: wrapCoord(entity.y + Math.sin(ang) * dist, h),
           groupId: entity.groupId,
+          meatDietType,
         }),
       );
     }
@@ -1607,6 +1605,7 @@ export class MacroWorld {
     child.dietImprintType = parentDiet;
     child.dietImprintStrength = childDietImprintStrength;
     child.staminaMul = this.getStaminaMulForDietType(parentDiet);
+    child.baseRadius = baseR;
     applyLifeStageScaling(child);
     child.hp = child.hpMax;
     child.hunger = child.hungerMax;
@@ -1746,7 +1745,7 @@ export class MacroWorld {
     const foodSearchPx = 32 * tile;
     const fleeRangePx = FLEE_RANGE_TILES * tile;
 
-    const { socialGroupCenters, socialGroupCenterList } = computeSocialGroups({
+    const { socialGroupCenters, socialGroupCenterList, socialGroups } = computeSocialGroups({
       entities,
       gridState,
       tile,
@@ -1767,6 +1766,7 @@ export class MacroWorld {
         gridState,
         socialGroupCenters,
         socialGroupCenterList,
+        socialGroups,
         dt: simDt,
         tile,
         w,

@@ -7,6 +7,10 @@ import {
   DEV_DECAY_EXPLORE_TAU,
   DEV_DECAY_MOVE_TAU,
   ELEVATION_WINGLESS_MAX_CLIMB_METERS,
+  EXPEDITION_FAILSAFE_SECONDS,
+  EXPEDITION_RESOURCE_SCAN_TILES,
+  EXPEDITION_SAMPLE_MAX_TILES,
+  EXPEDITION_SAMPLE_MIN_TILES,
   FEAR_MAX_SECONDS,
   FOLLOW_MOTHER_ENTER_TILES,
   FOLLOW_MOTHER_EXIT_TILES,
@@ -24,16 +28,16 @@ import {
 } from "./constants.js";
 import { dist2Wrapped, wrapCoord, wrapDelta } from "./geom.js";
 import { clamp01, clampInt, decayExp } from "./math.js";
-import { findNearest } from "./spatial.js";
+import { findNearest, forEachInRadius } from "./spatial.js";
 import { isMacroNonAnimalKind } from "./kinds.js";
-import { dietTypeForEntity, scaledAttackDamage } from "./diet.js";
+import { dietTypeForEntity, isCloseSpecies, scaledAttackDamage } from "./diet.js";
 import { speedMultiplierFromTraitCode } from "./traits.js";
 import { applyDietAppearanceShift } from "./variant.js";
 import { applyLifeStageScaling } from "./stats.js";
 import { evolutionStepEntity } from "./evolution_step.js";
 import { stepAnimalMovement } from "./animal_move.js";
 import { computeFoodAndCreateTryEat, createTryMilk, createTryNestFeed } from "./animal_feed.js";
-import { computeAttackTargetAndTryStrike } from "./animal_attack.js";
+import { computeAttackTargetAndCreateTryStrike } from "./animal_attack.js";
 import { tryReproduce } from "./animal_reproduction.js";
 import { computeParentingContext } from "./animal_parenting.js";
 import { computeFleeGoal } from "./animal_flee.js";
@@ -60,7 +64,9 @@ const MODE_FOOD = Math.max(0, BRAIN_MODES.indexOf("food"));
 const MODE_FLEE = Math.max(0, BRAIN_MODES.indexOf("flee"));
 const MODE_MATE = Math.max(0, BRAIN_MODES.indexOf("mate"));
 const MODE_HUNT = Math.max(0, BRAIN_MODES.indexOf("hunt"));
+const MODE_EXPEDITION = Math.max(0, BRAIN_MODES.indexOf("expedition"));
 const MODE_PARENTING = Math.max(0, BRAIN_MODES.indexOf("parenting"));
+const LEARNED_ACTION_MODE_IDXS = [MODE_REST, MODE_WANDER, MODE_FOOD, MODE_HUNT, MODE_EXPEDITION];
 
 const RL_BRAIN_LOGIT_SCALE = 0.85;
 const RL_DECISION_MIN_SECONDS = 0.5;
@@ -80,6 +86,15 @@ const RL_HEAD_SIGMA_DANGER_LOGIT = 0.35;
 const RL_HEAD_SIGMA_COMMIT_LOGIT = 0.25;
 const RL_HEAD_SIGMA_TEMP_LOGIT = 0.35;
 const RL_HEAD_LEARNING_RATE_MUL = 0.2;
+const RL_FOOD_PROGRESS_REWARD_W = 0.28;
+const RL_HUNT_PROGRESS_REWARD_W = 0.28;
+const RL_URGENT_PROGRESS_BONUS_W = 0.2;
+const RL_LOST_TARGET_PENALTY_W = 0.18;
+const RL_URGENT_IDLE_PENALTY_W = 0.08;
+const RL_EXPEDITION_RESOURCE_REWARD_W = 0.32;
+const RL_EXPEDITION_DEFICIT_REWARD_W = 0.26;
+const RL_EXPEDITION_SUCCESS_BONUS_W = 0.18;
+const RL_EXPEDITION_STALL_PENALTY_W = 0.08;
 
 let _randnSpare = null;
 function randNormal() {
@@ -99,6 +114,162 @@ function randNormal() {
   return z0;
 }
 
+function forEachNearbyWrapped({ gridState, x, y, radiusPx, w, h, cb }) {
+  const seen = new Set();
+  const shiftsX = [0];
+  const shiftsY = [0];
+  if (x - radiusPx < 0) shiftsX.push(w);
+  if (x + radiusPx > w) shiftsX.push(-w);
+  if (y - radiusPx < 0) shiftsY.push(h);
+  if (y + radiusPx > h) shiftsY.push(-h);
+  for (const sx of shiftsX) {
+    for (const sy of shiftsY) {
+      forEachInRadius(gridState, x + sx, y + sy, radiusPx, (idx) => {
+        if (seen.has(idx)) return;
+        seen.add(idx);
+        cb(idx);
+      });
+    }
+  }
+}
+
+function canReachTerrainPoint({ world, x, y, tile, tw, th, currentElevationMeters, isBird }) {
+  if (isBird) return true;
+  const tx = clampInt(Math.floor(wrapCoord(x, tw * tile) / tile), 0, tw - 1);
+  const ty = clampInt(Math.floor(wrapCoord(y, th * tile) / tile), 0, th - 1);
+  const targetElevation = world.getElevationAtTile(tx, ty);
+  if (targetElevation > ELEVATION_WINGLESS_MAX_CLIMB_METERS && currentElevationMeters <= ELEVATION_WINGLESS_MAX_CLIMB_METERS)
+    return false;
+  return true;
+}
+
+function getGroupResourceThresholds(dietNow, groupSize) {
+  const size = Math.max(1, Number(groupSize) || 1);
+  if (dietNow === "carnivore") return { start: 150 * size, end: 220 * size };
+  if (dietNow === "omnivore") return { start: 130 * size, end: 190 * size };
+  return { start: 120 * size, end: 180 * size };
+}
+
+function scoreResourceTotals(dietNow, totals) {
+  const plantHp = Math.max(0, Number(totals?.plantHp) || 0);
+  const meatHp = Math.max(0, Number(totals?.meatHp) || 0);
+  const preyHp = Math.max(0, Number(totals?.preyHp) || 0);
+  if (dietNow === "carnivore") return meatHp + preyHp * 0.6;
+  if (dietNow === "omnivore") return plantHp * 0.7 + (meatHp + preyHp * 0.6) * 0.3;
+  return plantHp;
+}
+
+function computeResourceTotalsAt({
+  world,
+  entity,
+  entities,
+  gridState,
+  x,
+  y,
+  radiusPx,
+  dietNow,
+  canReachByTerrain,
+  w,
+  h,
+}) {
+  const r2 = radiusPx * radiusPx;
+  let plantHp = 0;
+  let meatHp = 0;
+  let preyHp = 0;
+  forEachNearbyWrapped({
+    gridState,
+    x,
+    y,
+    radiusPx,
+    w,
+    h,
+    cb: (idx) => {
+      const other = entities[idx];
+      if (!other || other._dead) return;
+      const d2 = dist2Wrapped({ x, y }, other, w, h);
+      if (d2 > r2) return;
+      if (other.kind === "plant") {
+        plantHp += Math.max(0, Number(other.hp) || Number(other.baseHpMax) || 0);
+        return;
+      }
+      if (other.kind === "meat") {
+        meatHp += Math.max(0, Number(other.hp) || Number(other.baseHp) || 0);
+        return;
+      }
+      if (isMacroNonAnimalKind(other.kind)) return;
+      if (other.id === entity.id) return;
+      if (!canReachByTerrain(other)) return;
+      if (isCloseSpecies(entity, other)) return;
+      preyHp += Math.max(0, Number(other.hp) || Number(other.hpMax) || 0);
+    },
+  });
+  return {
+    plantHp,
+    meatHp,
+    preyHp,
+    score: scoreResourceTotals(dietNow, { plantHp, meatHp, preyHp }),
+  };
+}
+
+function pickExpeditionTarget({
+  world,
+  entity,
+  entities,
+  gridState,
+  originX,
+  originY,
+  dietNow,
+  canReachByTerrain,
+  currentElevationMeters,
+  isBird,
+  tile,
+  tw,
+  th,
+  w,
+  h,
+  radiusPx,
+}) {
+  const minDistPx = tile * EXPEDITION_SAMPLE_MIN_TILES;
+  const maxDistPx = tile * EXPEDITION_SAMPLE_MAX_TILES;
+  const startAngle = randFloat(0, Math.PI * 2);
+  let best = null;
+  for (let i = 0; i < 8; i++) {
+    const angle = startAngle + (Math.PI * 2 * i) / 8;
+    const distPx = randFloat(minDistPx, maxDistPx);
+    const x = wrapCoord(originX + Math.cos(angle) * distPx, w);
+    const y = wrapCoord(originY + Math.sin(angle) * distPx, h);
+    if (
+      !canReachTerrainPoint({
+        world,
+        x,
+        y,
+        tile,
+        tw,
+        th,
+        currentElevationMeters,
+        isBird,
+      })
+    )
+      continue;
+    const totals = computeResourceTotalsAt({
+      world,
+      entity,
+      entities,
+      gridState,
+      x,
+      y,
+      radiusPx,
+      dietNow,
+      canReachByTerrain,
+      w,
+      h,
+    });
+    const score = totals.score + randFloat(0, 0.01);
+    if (!best || score > best.score) best = { x, y, score };
+  }
+  return best;
+}
+
 export function stepAnimalAi({
   world,
   entity,
@@ -107,6 +278,7 @@ export function stepAnimalAi({
   gridState,
   socialGroupCenters,
   socialGroupCenterList,
+  socialGroups,
   dt,
   tile,
   w,
@@ -194,6 +366,103 @@ export function stepAnimalAi({
     mother.kind !== "meat" &&
     mother.sex === "female";
 
+  const socialGroup = e.socialGroupId ? socialGroups?.get(e.socialGroupId) : null;
+  const socialCenter = e.socialGroupId ? socialGroupCenters?.get(e.socialGroupId) : null;
+  const isGrouped = e.socialMode === "group" && Boolean(socialGroup);
+  const groupSize = Math.max(1, Number(socialGroup?.size) || 1);
+  const groupLeaderId = socialGroup?.leaderId ?? e.id;
+  const isGroupLeader = isGrouped && groupLeaderId === e.id;
+  const groupLeader = isGrouped ? (groupLeaderId === e.id ? e : byId.get(groupLeaderId)) : null;
+  const memberIds = Array.isArray(socialGroup?.memberIds) && socialGroup.memberIds.length > 0 ? socialGroup.memberIds : [e.id];
+  const groupAvgHungerPct = clamp01(
+    memberIds.reduce((sum, memberId) => {
+      const member = byId.get(memberId);
+      if (!member || member._dead || (member.hungerMax ?? 0) <= 0) return sum;
+      return sum + clamp((member.hunger ?? 0) / member.hungerMax, 0, 1);
+    }, 0) / Math.max(1, memberIds.length),
+  );
+  const resourceScanPx = EXPEDITION_RESOURCE_SCAN_TILES * tile;
+  const resourceOriginX = socialCenter?.x ?? e.x;
+  const resourceOriginY = socialCenter?.y ?? e.y;
+  const expeditionPreEligible =
+    isGrouped && isGroupLeader && !isBaby && !isChild && !isNestling && !hasMother && !parentingPos && !e.pregnant;
+  const localResourceTotals = isGrouped
+    ? computeResourceTotalsAt({
+        world,
+        entity: e,
+        entities,
+        gridState,
+        x: resourceOriginX,
+        y: resourceOriginY,
+        radiusPx: resourceScanPx,
+        dietNow,
+        canReachByTerrain,
+        w,
+        h,
+      })
+    : { plantHp: 0, meatHp: 0, preyHp: 0, score: 0 };
+  const expeditionThresholds = getGroupResourceThresholds(dietNow, groupSize);
+  const localResourceScore = localResourceTotals.score;
+  const localResourceScore01 = clamp01(localResourceScore / Math.max(1, expeditionThresholds.end));
+  const groupAvgHungerNeed01 = clamp01(1 - groupAvgHungerPct);
+  const resourceDeficit01 = clamp01(
+    (expeditionThresholds.start - localResourceScore) / Math.max(1, expeditionThresholds.start),
+  );
+  const groupSize01 = clamp01(groupSize / 12);
+
+  let expeditionCandidate = null;
+  if (expeditionPreEligible) {
+    expeditionCandidate = pickExpeditionTarget({
+      world,
+      entity: e,
+      entities,
+      gridState,
+      originX: resourceOriginX,
+      originY: resourceOriginY,
+      dietNow,
+      canReachByTerrain,
+      currentElevationMeters: curH,
+      isBird: isBirdForTargeting,
+      tile,
+      tw,
+      th,
+      w,
+      h,
+      radiusPx: resourceScanPx,
+    });
+  }
+  const bestCandidateScore = Math.max(localResourceScore, Number(expeditionCandidate?.score) || 0);
+  const bestCandidateScore01 = clamp01(bestCandidateScore / Math.max(1, expeditionThresholds.end));
+
+  if (isGroupLeader) {
+    if (e.expeditionFailSafeSeconds == null) e.expeditionFailSafeSeconds = 0;
+    e.expeditionFailSafeSeconds = Math.max(0, (e.expeditionFailSafeSeconds ?? 0) - dt);
+    e.expeditionLocalScore = localResourceScore;
+    e.expeditionBestCandidateScore = bestCandidateScore;
+    e.expeditionStartThreshold = expeditionThresholds.start;
+    e.expeditionEndThreshold = expeditionThresholds.end;
+    e.expeditionGroupAvgHungerPct = groupAvgHungerPct;
+    e.expeditionGroupSize = groupSize;
+    if (
+      e.expeditionActive &&
+      (localResourceScore >= expeditionThresholds.end || (e.expeditionFailSafeSeconds ?? 0) <= 0)
+    ) {
+      e.expeditionActive = false;
+      e.expeditionFailSafeSeconds = 0;
+      e.expeditionTargetX = null;
+      e.expeditionTargetY = null;
+    }
+  }
+
+  const leaderExpeditionActive = Boolean(groupLeader?.expeditionActive);
+  const leaderExpeditionTarget =
+    leaderExpeditionActive &&
+    Number.isFinite(Number(groupLeader?.expeditionTargetX)) &&
+    Number.isFinite(Number(groupLeader?.expeditionTargetY))
+      ? { x: Number(groupLeader.expeditionTargetX), y: Number(groupLeader.expeditionTargetY) }
+      : null;
+  const expeditionEligible = expeditionPreEligible && groupAvgHungerPct <= 0.55;
+
   let aiState = "徘徊";
   let aiPriority = 0;
   const setAiState = (label, priority) => {
@@ -215,7 +484,7 @@ export function stepAnimalAi({
   }
 
   // attack (only carnivores)
-  const { attackTarget } = computeAttackTargetAndTryStrike({
+  const { attackTarget, tryStrike } = computeAttackTargetAndCreateTryStrike({
     world,
     entity: e,
     dietNow,
@@ -224,7 +493,6 @@ export function stepAnimalAi({
     gridState,
     fleeRangePx,
     attackRangePx,
-    foodSearchPx,
     canReachByTerrain,
     w,
     h,
@@ -356,8 +624,9 @@ export function stepAnimalAi({
   });
   if (!goal && fleeGoal) goal = fleeGoal;
   if (fleeActive) fleeing = true;
+  const expeditionFollowActive = !fleeing && !isGroupLeader && leaderExpeditionActive && Boolean(leaderExpeditionTarget);
 
-  // RL policy ("brain"): learns among rest / wander / food via policy gradient + backprop (lamarckism).
+  // RL policy ("brain"): learns among rest / wander / food / hunt via policy gradient + backprop (lamarckism).
   let nnModeIdx = MODE_WANDER;
   let nnPaceMul = 1;
   let nnDangerWeight = 1;
@@ -373,6 +642,9 @@ export function stepAnimalAi({
 
   const wantsNnViz = nnVizFocusId != null && e.id === nnVizFocusId;
   if (e.genome && typeof e.genome === "object" && (!goal || wantsNnViz) && !isBaby && !isNestling) {
+    if (!Array.isArray(e._rlLearnAbsMode) || e._rlLearnAbsMode.length !== 5) e._rlLearnAbsMode = [0, 0, 0, 0, 0];
+    if (!Array.isArray(e._rlLearnAbsHead) || e._rlLearnAbsHead.length !== 4) e._rlLearnAbsHead = [0, 0, 0, 0];
+    if (!Number.isFinite(Number(e._rlUpdateCounter))) e._rlUpdateCounter = 0;
     const brain = ensureBrain(e.genome, Math.random);
     const inputs =
       e._nnInputs instanceof Float32Array && e._nnInputs.length === BRAIN_INPUTS
@@ -449,7 +721,8 @@ export function stepAnimalAi({
     // Inputs (0..1):
     // hp, hungerNeed, stamina, fear, heat, female, hasFood, foodDist, hasPrey, preyDist, parenting, bias,
     // terrAvg2, terrMax2, terrAvg3, terrMax3,
-    // envTemp, bodyTemp, fur, territoryThermalProtection.
+    // envTemp, bodyTemp, fur, territoryThermalProtection,
+    // localResource, bestCandidateResource, resourceDeficit, groupAvgHungerNeed, groupSize.
     inputs[0] = hp01;
     inputs[1] = hungerNeed01;
     inputs[2] = stamina01;
@@ -470,6 +743,11 @@ export function stepAnimalAi({
     inputs[17] = bodyTemp01;
     inputs[18] = fur01;
     inputs[19] = thermalProtection01;
+    inputs[20] = localResourceScore01;
+    inputs[21] = bestCandidateScore01;
+    inputs[22] = resourceDeficit01;
+    inputs[23] = groupAvgHungerNeed01;
+    inputs[24] = groupSize01;
 
     forwardBrain({ brain, inputs, hiddenOut: hidden, outputsOut: outputs });
 
@@ -493,12 +771,13 @@ export function stepAnimalAi({
         const lastX = Number(e._rlLastX);
         const lastY = Number(e._rlLastY);
         const lastFoodAllowed = Boolean(e._rlLastFoodAllowed);
+        const lastHuntAllowed = Boolean(e._rlLastHuntAllowed);
         const interrupted = Boolean(e._rlInterrupted);
 
         if (
           lastInputs &&
           Number.isFinite(lastAction) &&
-          (lastAction === 0 || lastAction === 1 || lastAction === 2) &&
+          (lastAction === 0 || lastAction === 1 || lastAction === 2 || lastAction === 3 || lastAction === 4) &&
           Number.isFinite(lastPhi) &&
           Number.isFinite(lastX) &&
           Number.isFinite(lastY) &&
@@ -525,22 +804,62 @@ export function stepAnimalAi({
           const activity01 = clamp01(moveTiles / RL_TERRITORY_ACTIVITY_TILES);
           reward += RL_TERRITORY_TILE_REWARD_W * (deltaTerritoryTiles / groupCount) * activity01;
 
+          const lastHungerNeed01 = clamp01(lastInputs[1]);
+          const lastStamina01 = clamp01(lastInputs[2]);
+          const lastHasFood01 = clamp01(lastInputs[6]);
+          const lastFoodDist01 = clamp01(lastInputs[7]);
+          const lastHasPrey01 = clamp01(lastInputs[8]);
+          const lastPreyDist01 = clamp01(lastInputs[9]);
+          const lastHeat01 = clamp01(lastInputs[4]);
+          const lastFemale01 = clamp01(lastInputs[5]);
+          const lastLocalResource01 = clamp01(lastInputs[20]);
+          const lastBestCandidate01 = clamp01(lastInputs[21]);
+          const lastResourceDeficit01 = clamp01(lastInputs[22]);
+          const lastGroupHungerNeed01 = clamp01(lastInputs[23]);
+          const urgentHunger01 = clamp01((lastHungerNeed01 - 0.6) / 0.35);
+          const foodProgress01 = lastHasFood01 > 0.5 && hasFood01 > 0.5 ? clamp(lastFoodDist01 - foodDist01, -1, 1) : 0;
+          const huntProgress01 = lastHasPrey01 > 0.5 && hasPrey01 > 0.5 ? clamp(lastPreyDist01 - preyDist01, -1, 1) : 0;
+          const expeditionResourceGain01 = clamp(localResourceScore01 - lastLocalResource01, -1, 1);
+          const expeditionDeficitGain01 = clamp(lastResourceDeficit01 - resourceDeficit01, -1, 1);
+          const likelyMissedFood =
+            lastHasFood01 > 0.5 && hasFood01 < 0.5 && hungerNeed01 >= Math.max(0, lastHungerNeed01 - 0.04);
+          const likelyMissedPrey =
+            lastHasPrey01 > 0.5 && hasPrey01 < 0.5 && hungerNeed01 >= Math.max(0, lastHungerNeed01 - 0.04);
+
+          if (lastAction === 2 && lastFoodAllowed) {
+            reward += foodProgress01 * (RL_FOOD_PROGRESS_REWARD_W + RL_URGENT_PROGRESS_BONUS_W * urgentHunger01);
+            if (likelyMissedFood) reward -= RL_LOST_TARGET_PENALTY_W * (0.6 + urgentHunger01);
+          } else if (lastAction === 3 && lastHuntAllowed) {
+            reward += huntProgress01 * (RL_HUNT_PROGRESS_REWARD_W + RL_URGENT_PROGRESS_BONUS_W * urgentHunger01);
+            if (likelyMissedPrey) reward -= RL_LOST_TARGET_PENALTY_W * (0.5 + urgentHunger01);
+          } else if (lastAction === 4) {
+            reward += expeditionResourceGain01 * (RL_EXPEDITION_RESOURCE_REWARD_W + 0.12 * lastGroupHungerNeed01);
+            reward += expeditionDeficitGain01 * (RL_EXPEDITION_DEFICIT_REWARD_W + 0.1 * lastGroupHungerNeed01);
+            if (resourceDeficit01 <= 0.001) reward += RL_EXPEDITION_SUCCESS_BONUS_W * (0.5 + 0.5 * lastGroupHungerNeed01);
+            if (expeditionResourceGain01 < 0.01 && expeditionDeficitGain01 < 0.01)
+              reward -= RL_EXPEDITION_STALL_PENALTY_W * (0.5 + 0.5 * lastGroupHungerNeed01);
+          }
+          if (urgentHunger01 > 0 && lastAction !== 0 && moveTiles < 0.08) {
+            reward -= RL_URGENT_IDLE_PENALTY_W * urgentHunger01;
+          }
+
           let baseline = Number(e._rlBaseline);
           if (!Number.isFinite(baseline)) baseline = 0;
           baseline = baseline * (1 - RL_BASELINE_ALPHA) + reward * RL_BASELINE_ALPHA;
           e._rlBaseline = baseline;
           const advantage = reward - baseline;
-
-          const lastHungerNeed01 = clamp01(lastInputs[1]);
-          const lastStamina01 = clamp01(lastInputs[2]);
-          const lastHasFood01 = clamp01(lastInputs[6]);
-          const lastHeat01 = clamp01(lastInputs[4]);
-          const lastFemale01 = clamp01(lastInputs[5]);
           const restAllowed = !(lastHeat01 > 0.5 && lastFemale01 > 0.5);
 
           const baseRest = restAllowed ? 0.2 + (0.25 - lastStamina01) * 4 - lastHungerNeed01 * 2 : -1e9;
           const baseWander = 0.4;
-          const baseFood = lastFoodAllowed ? 0.2 + lastHungerNeed01 * 5 + lastHasFood01 * 0.6 : -1e9;
+          const baseFood =
+            lastFoodAllowed ? 0.2 + lastHungerNeed01 * 5 + lastHasFood01 * 0.7 + (1 - lastFoodDist01) * 0.75 : -1e9;
+          const baseHunt =
+            lastHuntAllowed ? 0.15 + lastHungerNeed01 * 5.2 + lastHasPrey01 * 0.8 + (1 - lastPreyDist01) * 0.85 : -1e9;
+          const baseExpedition =
+            expeditionEligible
+              ? 0.15 + lastResourceDeficit01 * 4.5 + lastGroupHungerNeed01 * 2 + Math.max(0, lastBestCandidate01 - lastLocalResource01) * 2
+              : -1e9;
 
           const debugOut =
             e._rlLastUpdateDebug && typeof e._rlLastUpdateDebug === "object" ? e._rlLastUpdateDebug : (e._rlLastUpdateDebug = {});
@@ -549,9 +868,9 @@ export function stepAnimalAi({
             inputs: lastInputs,
             hiddenOut: hidden,
             outputsOut: outputs,
-            actionOutIdxs: [MODE_REST, MODE_WANDER, MODE_FOOD],
+            actionOutIdxs: [MODE_REST, MODE_WANDER, MODE_FOOD, MODE_HUNT, MODE_EXPEDITION],
             chosenAction: lastAction,
-            baseLogits: [baseRest, baseWander, baseFood],
+            baseLogits: [baseRest, baseWander, baseFood, baseHunt, baseExpedition],
             advantage,
             logitScale: RL_BRAIN_LOGIT_SCALE,
             learningRate: RL_LEARNING_RATE,
@@ -579,11 +898,11 @@ export function stepAnimalAi({
 
             // Cumulative learning magnitude (how much each head/action has been updated over time).
             const absMode =
-              Array.isArray(e._rlLearnAbsMode) && e._rlLearnAbsMode.length === 3 ? e._rlLearnAbsMode : (e._rlLearnAbsMode = [0, 0, 0]);
-            if (Array.isArray(debugOut.modeStep) && debugOut.modeStep.length === 3) {
-              absMode[0] += Math.abs(Number(debugOut.modeStep[0]) || 0);
-              absMode[1] += Math.abs(Number(debugOut.modeStep[1]) || 0);
-              absMode[2] += Math.abs(Number(debugOut.modeStep[2]) || 0);
+              Array.isArray(e._rlLearnAbsMode) && e._rlLearnAbsMode.length === 5
+                ? e._rlLearnAbsMode
+                : (e._rlLearnAbsMode = [0, 0, 0, 0, 0]);
+            if (Array.isArray(debugOut.modeStep) && debugOut.modeStep.length === 5) {
+              for (let i = 0; i < 5; i++) absMode[i] += Math.abs(Number(debugOut.modeStep[i]) || 0);
             }
 
             const absHead =
@@ -602,55 +921,122 @@ export function stepAnimalAi({
           forwardBrain({ brain, inputs, hiddenOut: hidden, outputsOut: outputs });
         }
 
-        // 2) Pick the next action among {rest, wander, food}.
+        // 2) Pick the next action among {rest, wander, food, hunt, expedition}.
         const foodAllowedNow = Boolean(e.foodSeekActive);
+        const huntAllowedNow = dietNow === "carnivore" && hasPrey01 > 0.5;
         const restAllowedNow = !(heat01 > 0.5 && female01 > 0.5);
+        const expeditionAllowedNow =
+          expeditionEligible &&
+          resourceDeficit01 > 0.001 &&
+          bestCandidateScore > localResourceScore + Math.max(10, expeditionThresholds.start * 0.04);
 
         const baseRest = restAllowedNow ? 0.2 + (0.25 - stamina01) * 4 - hungerNeed01 * 2 : -1e9;
         const baseWander = 0.4;
-        const baseFood = foodAllowedNow ? 0.2 + hungerNeed01 * 5 + hasFood01 * 0.6 : -1e9;
-
-        const z0 = baseRest + (Number(outputs[MODE_REST]) || 0) * RL_BRAIN_LOGIT_SCALE;
-        const z1 = baseWander + (Number(outputs[MODE_WANDER]) || 0) * RL_BRAIN_LOGIT_SCALE;
-        const z2 = baseFood + (Number(outputs[MODE_FOOD]) || 0) * RL_BRAIN_LOGIT_SCALE;
+        const baseFood = foodAllowedNow ? 0.2 + hungerNeed01 * 5 + hasFood01 * 0.7 + (1 - foodDist01) * 0.75 : -1e9;
+        const baseHunt = huntAllowedNow ? 0.15 + hungerNeed01 * 5.2 + hasPrey01 * 0.8 + (1 - preyDist01) * 0.85 : -1e9;
+        const baseExpedition = expeditionAllowedNow
+          ? 0.15 + resourceDeficit01 * 4.5 + groupAvgHungerNeed01 * 2 + Math.max(0, bestCandidateScore01 - localResourceScore01) * 2.25
+          : -1e9;
+        const baseLogits = [baseRest, baseWander, baseFood, baseHunt, baseExpedition];
 
         const t = Math.max(1e-3, RL_TEMPERATURE);
-        const x0 = z0 / t;
-        const x1 = z1 / t;
-        const x2 = z2 / t;
-        const m = Math.max(x0, x1, x2);
-        let e0 = Math.exp(x0 - m);
-        let e1 = Math.exp(x1 - m);
-        let e2 = Math.exp(x2 - m);
-        if (!(baseRest > -1e8)) e0 = 0;
-        if (!(baseFood > -1e8)) e2 = 0;
-        const s = e0 + e1 + e2;
-        let p0 = s > 0 ? e0 / s : 0;
-        let p1 = s > 0 ? e1 / s : 1;
-        let p2 = s > 0 ? e2 / s : 0;
+        const exps = new Array(LEARNED_ACTION_MODE_IDXS.length).fill(0);
+        const available = baseLogits.map((v) => Number.isFinite(v) && v > -1e8);
+        let maxX = -Infinity;
+        for (let i = 0; i < LEARNED_ACTION_MODE_IDXS.length; i++) {
+          if (!available[i]) continue;
+          const x = (baseLogits[i] + (Number(outputs[LEARNED_ACTION_MODE_IDXS[i]]) || 0) * RL_BRAIN_LOGIT_SCALE) / t;
+          exps[i] = x;
+          if (x > maxX) maxX = x;
+        }
+        let sumExp = 0;
+        for (let i = 0; i < exps.length; i++) {
+          if (!available[i]) {
+            exps[i] = 0;
+            continue;
+          }
+          exps[i] = Math.exp(exps[i] - maxX);
+          sumExp += exps[i];
+        }
+        const probs = exps.map((v, i) => (available[i] && sumExp > 0 ? v / sumExp : 0));
 
         // Epsilon exploration (respecting availability).
-        const a0 = baseRest > -1e8;
-        const a2 = baseFood > -1e8;
-        const nAvail = (a0 ? 1 : 0) + 1 + (a2 ? 1 : 0);
+        const nAvail = available.reduce((sum, ok) => sum + (ok ? 1 : 0), 0);
         const eps = clamp(RL_EPSILON, 0, 0.25);
         if (nAvail > 0 && eps > 0) {
           const add = eps / nAvail;
-          p0 = a0 ? p0 * (1 - eps) + add : 0;
-          p1 = p1 * (1 - eps) + add;
-          p2 = a2 ? p2 * (1 - eps) + add : 0;
-          const ss = p0 + p1 + p2;
+          for (let i = 0; i < probs.length; i++) probs[i] = available[i] ? probs[i] * (1 - eps) + add : 0;
+          const ss = probs.reduce((sum, v) => sum + v, 0);
           if (ss > 0) {
-            p0 /= ss;
-            p1 /= ss;
-            p2 /= ss;
+            for (let i = 0; i < probs.length; i++) probs[i] /= ss;
           }
         }
 
-        const r = Math.random();
-        const action = r < p0 ? 0 : r < p0 + p1 ? 1 : 2;
-        nnModeIdx = action === 0 ? MODE_REST : action === 1 ? MODE_WANDER : MODE_FOOD;
+        let action = probs.length - 1;
+        if (isGroupLeader && e.expeditionActive) {
+          action = 4;
+        } else {
+          const r = Math.random();
+          let accum = 0;
+          for (let i = 0; i < probs.length; i++) {
+            accum += probs[i];
+            if (r <= accum) {
+              action = i;
+              break;
+            }
+          }
+        }
+        nnModeIdx = LEARNED_ACTION_MODE_IDXS[action] ?? MODE_WANDER;
         e.nnModeIdx = nnModeIdx;
+
+        if (isGroupLeader) {
+          if (nnModeIdx === MODE_EXPEDITION) {
+            let nextTarget =
+              Number.isFinite(Number(e.expeditionTargetX)) && Number.isFinite(Number(e.expeditionTargetY))
+                ? { x: Number(e.expeditionTargetX), y: Number(e.expeditionTargetY) }
+                : null;
+            const reachedCurrentTarget =
+              nextTarget != null && dist2Wrapped(e, nextTarget, w, h) <= Math.pow(tile * 2, 2);
+            if (!nextTarget || reachedCurrentTarget) {
+              nextTarget =
+                expeditionCandidate ||
+                pickExpeditionTarget({
+                  world,
+                  entity: e,
+                  entities,
+                  gridState,
+                  originX: resourceOriginX,
+                  originY: resourceOriginY,
+                  dietNow,
+                  canReachByTerrain,
+                  currentElevationMeters: curH,
+                  isBird: isBirdForTargeting,
+                  tile,
+                  tw,
+                  th,
+                  w,
+                  h,
+                  radiusPx: resourceScanPx,
+                });
+            }
+            if (nextTarget) {
+              e.expeditionActive = true;
+              if ((e.expeditionFailSafeSeconds ?? 0) <= 0) e.expeditionFailSafeSeconds = EXPEDITION_FAILSAFE_SECONDS;
+              e.expeditionTargetX = nextTarget.x;
+              e.expeditionTargetY = nextTarget.y;
+            } else {
+              e.expeditionActive = false;
+              e.expeditionTargetX = null;
+              e.expeditionTargetY = null;
+              action = 1;
+              nnModeIdx = MODE_WANDER;
+              e.nnModeIdx = nnModeIdx;
+            }
+          } else if (!e.expeditionActive) {
+            e.expeditionTargetX = null;
+            e.expeditionTargetY = null;
+          }
+        }
 
         // Sample continuous heads in logit space and keep them fixed until the next decision interval.
         const meanPaceLogit = Number(outputs[BRAIN_OUT_PACE]) || 0;
@@ -693,6 +1079,7 @@ export function stepAnimalAi({
         e._rlLastX = e.x;
         e._rlLastY = e.y;
         e._rlLastFoodAllowed = foodAllowedNow ? 1 : 0;
+        e._rlLastHuntAllowed = huntAllowedNow ? 1 : 0;
         e._rlLastTerritoryTiles =
           typeof world?.getTerritoryGroupTileCountForEntity === "function"
             ? Number(world.getTerritoryGroupTileCountForEntity(e)) || 0
@@ -703,6 +1090,53 @@ export function stepAnimalAi({
       e.nnPaceMul = nnPaceMul;
       e.nnDangerWeight = nnDangerWeight;
       e.nnTempBias = nnTempBias;
+    }
+  }
+
+  const expeditionLeaderNow = isGroupLeader ? e : groupLeader;
+  let expeditionActiveNow = !fleeing && Boolean(expeditionLeaderNow?.expeditionActive);
+  let expeditionTargetNow =
+    expeditionActiveNow &&
+    Number.isFinite(Number(expeditionLeaderNow?.expeditionTargetX)) &&
+    Number.isFinite(Number(expeditionLeaderNow?.expeditionTargetY))
+      ? { x: Number(expeditionLeaderNow.expeditionTargetX), y: Number(expeditionLeaderNow.expeditionTargetY) }
+      : null;
+
+  if (!goal && !stayingForFood && !stayingForNest && expeditionActiveNow) {
+    if (isGroupLeader && (!expeditionTargetNow || dist2Wrapped(e, expeditionTargetNow, w, h) <= Math.pow(tile * 2, 2))) {
+      const refreshedTarget =
+        expeditionCandidate ||
+        pickExpeditionTarget({
+          world,
+          entity: e,
+          entities,
+          gridState,
+          originX: resourceOriginX,
+          originY: resourceOriginY,
+          dietNow,
+          canReachByTerrain,
+          currentElevationMeters: curH,
+          isBird: isBirdForTargeting,
+          tile,
+          tw,
+          th,
+          w,
+          h,
+          radiusPx: resourceScanPx,
+        });
+      if (refreshedTarget) {
+        e.expeditionTargetX = refreshedTarget.x;
+        e.expeditionTargetY = refreshedTarget.y;
+        expeditionTargetNow = { x: refreshedTarget.x, y: refreshedTarget.y };
+      }
+    }
+    if (expeditionTargetNow) {
+      goal = expeditionTargetNow;
+      setAiState("大遠征", 7);
+    } else if (isGroupLeader) {
+      e.expeditionActive = false;
+      e.expeditionFailSafeSeconds = 0;
+      expeditionActiveNow = false;
     }
   }
 
@@ -719,6 +1153,14 @@ export function stepAnimalAi({
       const seed = (e.id * 2654435761 + (food.id ?? 0) * 1013904223) >>> 0;
       const ang = ((seed % 6283) / 1000) || 0;
       goal = { x: food.x + Math.cos(ang) * k, y: food.y + Math.sin(ang) * k };
+    }
+  }
+
+  if (!goal && !stayingForFood && nnModeIdx === MODE_HUNT && dietNow === "carnivore" && attackTarget && !attackTarget._dead) {
+    attacking = true;
+    if (!tryStrike?.()) {
+      goal = { x: attackTarget.x, y: attackTarget.y };
+      setAiState("攻撃へ移動", 8);
     }
   }
 
@@ -762,12 +1204,6 @@ export function stepAnimalAi({
     } else {
       setAiState("繁殖相手探索", 4);
     }
-  }
-
-  if (!goal && !stayingForFood && dietNow === "carnivore" && attackTarget && !attackTarget._dead) {
-    goal = { x: attackTarget.x, y: attackTarget.y };
-    setAiState("攻撃へ移動", 8);
-    attacking = true;
   }
 
   // Parenting: return to nest (incubate/feed) when not fleeing/eating/attacking.
@@ -870,7 +1306,8 @@ export function stepAnimalAi({
 
   // RL bookkeeping: if forced behaviors took control, don't credit the RL action for this interval.
   if (e._rlLastAction != null) {
-    const forced = fleeing || attacking || seekingMate || milkMode || stayingForNest || hasMother || isNestling;
+    const forced =
+      fleeing || attacking || seekingMate || milkMode || stayingForNest || hasMother || isNestling || expeditionFollowActive;
     if (forced) e._rlInterrupted = true;
   }
 

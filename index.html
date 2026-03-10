@@ -155,8 +155,8 @@
 
               <fieldset>
                 <legend>肉の腐敗</legend>
-                <label><input type="radio" name="macro-meat-rot" value="on" checked />あり</label>
-                <label><input type="radio" name="macro-meat-rot" value="off" />なし</label>
+                <label><input type="radio" name="macro-meat-rot" value="on" />あり</label>
+                <label><input type="radio" name="macro-meat-rot" value="off" checked />なし</label>
               </fieldset>
             </div>
 
@@ -177,13 +177,6 @@
               </fieldset>
 
               <fieldset>
-                <legend>草食：出産数</legend>
-                <label><input type="radio" name="macro-herb-birth-preset" value="few" />少ない</label>
-                <label><input type="radio" name="macro-herb-birth-preset" value="normal" checked />普通</label>
-                <label><input type="radio" name="macro-herb-birth-preset" value="many" />多い</label>
-              </fieldset>
-
-              <fieldset>
                 <legend>雑食：カップル繁殖数</legend>
                 <label><input type="radio" name="macro-omni-repro-preset" value="few" />少ない</label>
                 <label><input type="radio" name="macro-omni-repro-preset" value="normal" checked />普通</label>
@@ -191,24 +184,10 @@
               </fieldset>
 
               <fieldset>
-                <legend>雑食：出産数</legend>
-                <label><input type="radio" name="macro-omni-birth-preset" value="few" />少ない</label>
-                <label><input type="radio" name="macro-omni-birth-preset" value="normal" checked />普通</label>
-                <label><input type="radio" name="macro-omni-birth-preset" value="many" />多い</label>
-              </fieldset>
-
-              <fieldset>
                 <legend>肉食：カップル繁殖数</legend>
                 <label><input type="radio" name="macro-carn-repro-preset" value="few" />少ない</label>
                 <label><input type="radio" name="macro-carn-repro-preset" value="normal" checked />普通</label>
                 <label><input type="radio" name="macro-carn-repro-preset" value="many" />多い</label>
-              </fieldset>
-
-              <fieldset>
-                <legend>肉食：出産数</legend>
-                <label><input type="radio" name="macro-carn-birth-preset" value="few" />少ない</label>
-                <label><input type="radio" name="macro-carn-birth-preset" value="normal" checked />普通</label>
-                <label><input type="radio" name="macro-carn-birth-preset" value="many" />多い</label>
               </fieldset>
 
               <fieldset>
@@ -359,8 +338,8 @@
               <fieldset>
                 <legend>肉食：攻撃倍率</legend>
                 <div id="range-row">
-                  <input id="macro-carn-attack-mul" type="range" min="1.0" max="5.0" step="0.1" value="2.0" />
-                  <span id="macro-carn-attack-mul-value">×2.0</span>
+                  <input id="macro-carn-attack-mul" type="range" min="1.0" max="10.0" step="0.1" value="5.0" />
+                  <span id="macro-carn-attack-mul-value">×5.0</span>
                 </div>
               </fieldset>
             </div>
@@ -369,8 +348,8 @@
               <fieldset>
                 <legend>進化モード</legend>
                 <label><input type="radio" name="evolution-mode" value="natural" />自然淘汰型</label>
-                <label><input type="radio" name="evolution-mode" value="ga" checked />GA選別型</label>
-                <label><input type="radio" name="evolution-mode" value="both" />自然淘汰型・GA選別型</label>
+                <label><input type="radio" name="evolution-mode" value="ga" />GA選別型</label>
+                <label><input type="radio" name="evolution-mode" value="both" checked />自然淘汰型・GA選別型</label>
               </fieldset>
 
               <fieldset id="fitness-weight-fieldset">
@@ -394,7 +373,7 @@
               <fieldset>
                 <legend>NN可視化：出力表示</legend>
                 <label
-                  ><input type="radio" name="macro-nn-viz-outputs" value="compact" checked />3択＋速度/危険回避/決定維持/温度指向</label
+                  ><input type="radio" name="macro-nn-viz-outputs" value="compact" checked />4択＋速度/危険回避/決定維持/温度指向</label
                 >
                 <label><input type="radio" name="macro-nn-viz-outputs" value="full" />全モード＋速度/危険回避/決定維持/温度指向</label>
               </fieldset>

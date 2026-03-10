@@ -4,9 +4,8 @@ import { dist2Wrapped, wrapCoord } from "./geom.js";
 import { isMacroNonAnimalKind } from "./kinds.js";
 import { dietTypeForEntity, populationCapForDietType } from "./diet.js";
 import { snapshotParentForRepro } from "./genome.js";
-import { clamp01, clampInt } from "./math.js";
+import { clampInt } from "./math.js";
 import { findNearest } from "./spatial.js";
-import { childrenCountFromRoundness01, coupleReproMaxFromRoundness01, roundness01FromAppearance } from "./stats.js";
 
 export function tryReproduce({
   world,
@@ -111,15 +110,12 @@ export function tryReproduce({
   const success = sameDietNearby < 30 && Math.random() < successProb;
   if (!success) return;
 
-  const coupleRoundness = clamp01((roundness01FromAppearance(e) + roundness01FromAppearance(mate)) / 2);
   const cfg = world._getDietReproConfig(dietKey);
-  const birthMin = cfg?.birthMin ?? 2;
-  const birthMax = cfg?.birthMax ?? world._birthMax;
-  const reproMin = cfg?.reproMin ?? 1;
+  const reproMin = cfg?.reproMin ?? 3;
   const reproMax = cfg?.reproMax ?? world._coupleReproMax;
-
-  const babies = childrenCountFromRoundness01(coupleRoundness, birthMin, birthMax);
-  const desiredMax = coupleReproMaxFromRoundness01(coupleRoundness, reproMin, reproMax);
+  const babies = dietKey === "herbivore" ? 4 + Math.floor(Math.random() * 3) : 3 + Math.floor(Math.random() * 3);
+  const desiredMax =
+    reproMax <= reproMin ? reproMin : reproMin + Math.floor(Math.random() * (reproMax - reproMin + 1));
 
   const existingA = Number(e.reproSuccessMax);
   const existingB = Number(mate.reproSuccessMax);

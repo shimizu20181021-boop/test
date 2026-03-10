@@ -254,7 +254,7 @@ export function bindSettingsUI({ getSettings, getViewMode, setPaused, applySetti
 
   function syncMacroCarnAttackMulLabel() {
     if (!macroCarnAttackMulRange || !macroCarnAttackMulValue) return;
-    const v = clampFloat(macroCarnAttackMulRange.value, 1.0, 5.0);
+    const v = clampFloat(macroCarnAttackMulRange.value, 1.0, 10.0);
     macroCarnAttackMulValue.textContent = `×${v.toFixed(1)}`;
   }
 
@@ -448,11 +448,8 @@ export function bindSettingsUI({ getSettings, getViewMode, setPaused, applySetti
     const groupSize = groupSizeRaw === 4 || groupSizeRaw === 8 || groupSizeRaw === 12 ? groupSizeRaw : DEFAULT_SETTINGS.macroGroupMaxSize;
     selectRadio("macro-group-max-size", String(groupSize));
     selectRadio("macro-herb-repro-preset", current.macroHerbReproPreset || DEFAULT_SETTINGS.macroHerbReproPreset);
-    selectRadio("macro-herb-birth-preset", current.macroHerbBirthPreset || DEFAULT_SETTINGS.macroHerbBirthPreset);
     selectRadio("macro-omni-repro-preset", current.macroOmniReproPreset || DEFAULT_SETTINGS.macroOmniReproPreset);
-    selectRadio("macro-omni-birth-preset", current.macroOmniBirthPreset || DEFAULT_SETTINGS.macroOmniBirthPreset);
     selectRadio("macro-carn-repro-preset", current.macroCarnReproPreset || DEFAULT_SETTINGS.macroCarnReproPreset);
-    selectRadio("macro-carn-birth-preset", current.macroCarnBirthPreset || DEFAULT_SETTINGS.macroCarnBirthPreset);
     if (macroPlantReproMaxRange) {
       macroPlantReproMaxRange.value = String(
         clampInt(current.macroPlantReproMax ?? DEFAULT_SETTINGS.macroPlantReproMax, 1, 5),
@@ -543,7 +540,7 @@ export function bindSettingsUI({ getSettings, getViewMode, setPaused, applySetti
     }
     if (macroCarnAttackMulRange) {
       macroCarnAttackMulRange.value = String(
-        clampFloat(current.macroCarnAttackMul ?? DEFAULT_SETTINGS.macroCarnAttackMul, 1.0, 5.0),
+        clampFloat(current.macroCarnAttackMul ?? DEFAULT_SETTINGS.macroCarnAttackMul, 1.0, 10.0),
       );
       syncMacroCarnAttackMulLabel();
     }
@@ -598,11 +595,8 @@ export function bindSettingsUI({ getSettings, getViewMode, setPaused, applySetti
         return DEFAULT_SETTINGS.macroGroupMaxSize;
       })();
       const macroHerbReproPreset = getSelectedRadio("macro-herb-repro-preset", DEFAULT_SETTINGS.macroHerbReproPreset);
-      const macroHerbBirthPreset = getSelectedRadio("macro-herb-birth-preset", DEFAULT_SETTINGS.macroHerbBirthPreset);
       const macroOmniReproPreset = getSelectedRadio("macro-omni-repro-preset", DEFAULT_SETTINGS.macroOmniReproPreset);
-      const macroOmniBirthPreset = getSelectedRadio("macro-omni-birth-preset", DEFAULT_SETTINGS.macroOmniBirthPreset);
       const macroCarnReproPreset = getSelectedRadio("macro-carn-repro-preset", DEFAULT_SETTINGS.macroCarnReproPreset);
-      const macroCarnBirthPreset = getSelectedRadio("macro-carn-birth-preset", DEFAULT_SETTINGS.macroCarnBirthPreset);
       const macroPlantReproMax = macroPlantReproMaxRange
         ? clampInt(macroPlantReproMaxRange.value, 1, 5)
         : DEFAULT_SETTINGS.macroPlantReproMax;
@@ -648,7 +642,7 @@ export function bindSettingsUI({ getSettings, getViewMode, setPaused, applySetti
         ? clampFloat(macroCarnHungerDecayMulRange.value, 0.1, 3.0)
         : DEFAULT_SETTINGS.macroCarnHungerDecayMul;
       const macroCarnAttackMul = macroCarnAttackMulRange
-        ? clampFloat(macroCarnAttackMulRange.value, 1.0, 5.0)
+        ? clampFloat(macroCarnAttackMulRange.value, 1.0, 10.0)
         : DEFAULT_SETTINGS.macroCarnAttackMul;
       const macroEvolutionMode = getSelectedRadio("evolution-mode", DEFAULT_SETTINGS.macroEvolutionMode);
       const level = getSelectedRadio("fitness-weight", fitnessLevelFromWeight(DEFAULT_SETTINGS.fitnessChildWeight));
@@ -664,11 +658,8 @@ export function bindSettingsUI({ getSettings, getViewMode, setPaused, applySetti
         macroPopCapCarnivore,
         macroGroupMaxSize,
         macroHerbReproPreset,
-        macroHerbBirthPreset,
         macroOmniReproPreset,
-        macroOmniBirthPreset,
         macroCarnReproPreset,
-        macroCarnBirthPreset,
         macroPlantReproMax,
         macroMeatHungerRecoverPct,
         macroMeatRotEnabled,
