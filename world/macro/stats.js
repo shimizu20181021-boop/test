@@ -129,6 +129,8 @@ export function lifeStageScale(stage) {
 
 export function applyLifeStageScaling(entity) {
   if (!entity || isMacroNonAnimalKind(entity.kind)) return;
+  const prevHpMax = Math.max(1, Number(entity.hpMax) || Number(entity.baseHpMax) || BASE_STAT);
+  const prevHp = Number(entity.hp);
   const scale = lifeStageScale(entity.lifeStage);
   const staminaMul = clamp(Number(entity.staminaMul) || 1, 0.1, 10);
 
@@ -142,7 +144,12 @@ export function applyLifeStageScaling(entity) {
   entity.staminaMax = Math.max(0, Math.round(entity.baseStaminaMax * scale * staminaMul));
   entity.radius = Math.max(6, entity.baseRadius * scale);
 
-  entity.hp = clamp(entity.hp ?? entity.hpMax, 0, entity.hpMax);
+  if (Number.isFinite(prevHp)) {
+    const growthHp = Math.max(0, entity.hpMax - prevHpMax);
+    entity.hp = clamp(prevHp + growthHp, 0, entity.hpMax);
+  } else {
+    entity.hp = clamp(entity.hp ?? entity.hpMax, 0, entity.hpMax);
+  }
   entity.hunger = clamp(entity.hunger ?? entity.hungerMax, 0, entity.hungerMax);
   entity.stamina = clamp(entity.stamina ?? entity.staminaMax, 0, entity.staminaMax);
 }
@@ -155,6 +162,8 @@ export function plantStageScale(stage) {
 
 export function applyPlantStageScaling(entity) {
   if (!entity || entity.kind !== "plant") return;
+  const prevHpMax = Math.max(1, Number(entity.hpMax) || Number(entity.baseHpMax) || BASE_STAT);
+  const prevHp = Number(entity.hp);
   const stage = clampInt(entity.plantStage ?? 2, 0, 2);
   entity.plantStage = stage;
   const scale = plantStageScale(stage);
@@ -165,7 +174,12 @@ export function applyPlantStageScaling(entity) {
 
   entity.hpMax = Math.max(1, Math.round(entity.baseHpMax * scale * hpMul));
   entity.radius = Math.max(5, entity.baseRadius * scale);
-  entity.hp = clamp(entity.hp ?? entity.hpMax, 0, entity.hpMax);
+  if (Number.isFinite(prevHp)) {
+    const growthHp = Math.max(0, entity.hpMax - prevHpMax);
+    entity.hp = clamp(prevHp + growthHp, 0, entity.hpMax);
+  } else {
+    entity.hp = clamp(entity.hp ?? entity.hpMax, 0, entity.hpMax);
+  }
 }
 
 export function plantRegenMultiplier(weatherKind) {

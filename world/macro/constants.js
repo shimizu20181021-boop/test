@@ -70,6 +70,7 @@ export const WEATHER_KIND = {
   snowy: "snowy",
   drought: "drought",
 };
+export const DAY_LENGTH_SECONDS = 60;
 export const WEATHER_STEP_SECONDS = 30;
 
 export const ATTACK_RANGE_TILES = 1;

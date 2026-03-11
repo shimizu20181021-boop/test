@@ -44,6 +44,29 @@ body {
   z-index: 6;
 }
 
+#bgm-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid #999;
+  background: rgba(221, 221, 221, 0.95);
+}
+
+#bgm-label {
+  font-weight: 700;
+}
+
+#bgm-volume {
+  width: 120px;
+}
+
+#bgm-volume-value {
+  min-width: 3em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 #settings-open,
 #settings-open-env,
 #settings-open-life,

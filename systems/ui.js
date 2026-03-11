@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS } from "../core/config.js";
+﻿import { DEFAULT_SETTINGS } from "../core/config.js";
 
 function selectRadio(name, value) {
   const el = document.querySelector(`input[name="${name}"][value="${value}"]`);

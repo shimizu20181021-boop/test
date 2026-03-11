@@ -1,4 +1,4 @@
-import { MACRO_CONFIG } from "../core/config.js";
+﻿import { MACRO_CONFIG } from "../core/config.js";
 import { clamp, randFloat } from "../core/utils.js";
 import { BIOMES, generateBiomeMap } from "./biome.js";
 import { generateElevationMap } from "./elevation.js";
@@ -8,6 +8,7 @@ import {
   ATTACK_RANGE_TILES,
   BASE_ANIMAL_LIFESPAN_SECONDS,
   BASE_STAT,
+  DAY_LENGTH_SECONDS,
   DIET_IMPRINT_BASE_STRENGTH,
   DIET_IMPRINT_CHILD_ADD,
   DIET_IMPRINT_MAX_STRENGTH,
@@ -69,7 +70,6 @@ import { ensureTerritoryPaintState, pickTerritoryGroupColor, stepTerritoryPaint 
 
 let nextMacroId = 1;
 
-const DAY_LENGTH_SECONDS = 60;
 const SEASON_CYCLE = [
   { kind: "autumn", label: "秋", icon: "🍂", days: 20, baseTempC: 20 },
   { kind: "winter", label: "冬", icon: "❄️", days: 16, baseTempC: 4 },
@@ -205,11 +205,11 @@ export class MacroWorld {
     this._world = { width: 4096, height: 3072 };
     this._animalCap = 30;
     this._groupMaxSize = 4;
-    this._coupleReproMax = 3;
+    this._coupleReproMax = 2;
     this._dietReproductionConfig = {
-      herbivore: { reproMin: 3, reproMax: 3 },
-      omnivore: { reproMin: 3, reproMax: 3 },
-      carnivore: { reproMin: 3, reproMax: 3 },
+      herbivore: { reproMin: 2, reproMax: 2 },
+      omnivore: { reproMin: 2, reproMax: 2 },
+      carnivore: { reproMin: 2, reproMax: 2 },
     };
     this._plantReproMax = 1;
     this._meatHungerRecoverFraction = MEAT_HUNGER_RECOVER_FRACTION;
@@ -804,9 +804,9 @@ export class MacroWorld {
     };
 
     const prev = this._dietReproductionConfig || {
-      herbivore: { reproMin: 3, reproMax: 3 },
-      omnivore: { reproMin: 3, reproMax: 3 },
-      carnivore: { reproMin: 3, reproMax: 3 },
+      herbivore: { reproMin: 2, reproMax: 2 },
+      omnivore: { reproMin: 2, reproMax: 2 },
+      carnivore: { reproMin: 2, reproMax: 2 },
     };
 
     this._dietReproductionConfig = {
@@ -1547,7 +1547,10 @@ export class MacroWorld {
     }
     base.attackPct = clamp(100 - base.staminaPct - base.healthPct, 0, 100);
 
-    const kind = kindFromPercents(base);
+    let kind = kindFromPercents(base);
+    if (kind === "plant") {
+      kind = base.attackPct >= 35 ? "predator" : base.healthPct >= base.staminaPct ? "largeHerbivore" : "smallHerbivore";
+    }
     const sex = Math.random() < 0.5 ? "male" : "female";
     const rng = mulberry32((base.id ?? Date.now()) * 2654435761);
     const parentDiet = dietTypeForEntity(mother) || dietTypeForEntity(father) || dietTypeFromKind(kind);

@@ -111,9 +111,14 @@ export function tryReproduce({
   if (!success) return;
 
   const cfg = world._getDietReproConfig(dietKey);
-  const reproMin = cfg?.reproMin ?? 3;
+  const reproMin = cfg?.reproMin ?? 2;
   const reproMax = cfg?.reproMax ?? world._coupleReproMax;
-  const babies = dietKey === "herbivore" ? 4 + Math.floor(Math.random() * 3) : 3 + Math.floor(Math.random() * 3);
+  const babies =
+    dietKey === "herbivore"
+      ? 4 + Math.floor(Math.random() * 3)
+      : dietKey === "carnivore"
+        ? 3 + Math.floor(Math.random() * 2)
+        : 3 + Math.floor(Math.random() * 3);
   const desiredMax =
     reproMax <= reproMin ? reproMin : reproMin + Math.floor(Math.random() * (reproMax - reproMin + 1));
 

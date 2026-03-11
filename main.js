@@ -1,8 +1,9 @@
-import { DEFAULT_SETTINGS, MACRO_CONFIG, SETTINGS_PRESETS } from "./core/config.js";
+﻿import { DEFAULT_SETTINGS, MACRO_CONFIG, SETTINGS_PRESETS } from "./core/config.js";
 import { MicroWorld } from "./world/world.js";
 import { MacroWorld } from "./world/macro_world.js";
 import { dietTypeForEntity } from "./world/macro/diet.js";
 import { bindSettingsUI } from "./systems/ui.js";
+import { BgmManager } from "./systems/bgm.js";
 import { Renderer } from "./render/render.js";
 import { Camera2D, CameraInput } from "./systems/camera.js";
 
@@ -19,6 +20,8 @@ const viewMicroButton = document.getElementById("view-micro");
 const viewMacroButton = document.getElementById("view-macro");
 const autoObserveButton = document.getElementById("auto-observe");
 const autoObserveTargets = document.getElementById("auto-observe-targets");
+const bgmVolumeRange = document.getElementById("bgm-volume");
+const bgmVolumeValue = document.getElementById("bgm-volume-value");
 const macroTimer = document.getElementById("macro-timer");
 const macroTimerText = document.getElementById("macro-timer-text");
 const weatherIndicator = document.getElementById("weather-indicator");
@@ -36,6 +39,20 @@ const macroWorld = new MacroWorld();
 const renderer = new Renderer(canvas);
 const macroCamera = new Camera2D();
 const macroCameraInput = new CameraInput(canvas);
+const BGM_VOLUME_STORAGE_KEY = "olo-bgm-volume";
+
+function loadInitialBgmVolume01() {
+  try {
+    const raw = localStorage.getItem(BGM_VOLUME_STORAGE_KEY);
+    const n = Number(raw);
+    if (Number.isFinite(n)) return Math.max(0, Math.min(1, n));
+  } catch {
+    // ignore
+  }
+  return 0.7;
+}
+
+const bgmManager = new BgmManager({ volume01: loadInitialBgmVolume01(), overlayVolumeMul: 0.3, fadeSeconds: 1.0 });
 
 const MACRO_MAP_SIZE_TILES = {
   small: { width: 60, height: 60 },
@@ -46,7 +63,7 @@ const MACRO_MAP_SIZE_TILES = {
 
 const MACRO_COUPLE_REPRO_PRESET = {
   few: { min: 1, max: 2 },
-  normal: { min: 3, max: 3 },
+  normal: { min: 2, max: 2 },
   many: { min: 4, max: 5 },
 };
 
@@ -101,6 +118,37 @@ function clampNumber(value, min, max) {
 function clampMacroZoom(z) {
   return clampNumber(z, macroZoomMin, macroZoomMax);
 }
+
+function syncBgmVolumeUi() {
+  const pct = Math.round((bgmManager?.volume01 ?? 0) * 100);
+  if (bgmVolumeRange) bgmVolumeRange.value = String(pct);
+  if (bgmVolumeValue) bgmVolumeValue.textContent = `${pct}%`;
+}
+
+function setBgmVolumeFromPercent(percent) {
+  const pct = clampNumber(percent, 0, 100);
+  const volume01 = pct / 100;
+  bgmManager.setVolume01(volume01);
+  syncBgmVolumeUi();
+  try {
+    localStorage.setItem(BGM_VOLUME_STORAGE_KEY, String(volume01));
+  } catch {
+    // ignore
+  }
+}
+
+function unlockBgm() {
+  bgmManager.unlock();
+}
+
+syncBgmVolumeUi();
+if (bgmVolumeRange) {
+  bgmVolumeRange.addEventListener("input", () => {
+    setBgmVolumeFromPercent(bgmVolumeRange.value);
+  });
+}
+window.addEventListener("pointerdown", unlockBgm, { passive: true });
+window.addEventListener("keydown", unlockBgm);
 
 function updatePointerFromEvent(e) {
   const rect = canvas.getBoundingClientRect();
@@ -302,7 +350,7 @@ function stepNnViz(nowMs) {
     if (nnVizTargetId != null) setNnVizTargetId(null);
     return;
   }
-  if (!nnVizReady) return;
+  if (!nnVizReady) syncNnVizConfig();
   if (nnVizTargetId == null) return;
   if (nowMs - nnVizLastSendMs < NN_VIZ_SEND_INTERVAL_MS) return;
   nnVizLastSendMs = nowMs;
@@ -311,7 +359,7 @@ function stepNnViz(nowMs) {
   const selectedDiet = selected ? dietTypeForEntity(selected) : null;
   const label = selected
     ? `${dietTypeLabel(selectedDiet)} / ${sexLabel(selected.sex)} / ${lifeStageLabel(selected.lifeStage)}`
-    : "（不在/死亡）";
+    : "個体なし / 死亡済み";
 
   nnVizWindow.postMessage(
     {
@@ -415,9 +463,9 @@ macroCameraInput.onPinch = (scale, sx, sy) => {
 function macroKindLabel(kind) {
   switch (kind) {
     case "smallHerbivore":
-      return "草食（小）";
+      return "草食（小型）";
     case "largeHerbivore":
-      return "草食（大）";
+      return "草食（大型）";
     case "predator":
       return "肉食";
     case "plant":
@@ -443,6 +491,19 @@ function dietTypeLabel(type) {
       return "肉";
     default:
       return "不明";
+  }
+}
+
+function litterRangeLabel(type) {
+  switch (type) {
+    case "herbivore":
+      return "4〜6";
+    case "carnivore":
+      return "3〜4";
+    case "omnivore":
+      return "3〜5";
+    default:
+      return "-";
   }
 }
 
@@ -490,7 +551,6 @@ function fmtHms(totalSeconds) {
 }
 
 function macroRatioText() {
-  // Show composition by current existing entities (not reincarnation group count).
   const counts = { plant: 0, herbivore: 0, omnivore: 0, carnivore: 0, meat: 0 };
   for (const e of macroWorld.entities) {
     if (!e || e._dead) continue;
@@ -502,9 +562,7 @@ function macroRatioText() {
       counts.meat++;
       continue;
     }
-    if (e.kind === "rock" || e.kind === "tree") {
-      continue;
-    }
+    if (e.kind === "rock" || e.kind === "tree") continue;
     const d = String(e.dietType || "");
     if (d === "herbivore") counts.herbivore++;
     else if (d === "omnivore") counts.omnivore++;
@@ -514,17 +572,17 @@ function macroRatioText() {
   }
 
   const total = counts.plant + counts.herbivore + counts.omnivore + counts.carnivore + counts.meat;
-  if (total <= 0) return "比率(存在): -";
+  if (total <= 0) return "比率(実数): -";
 
   const pct = (n) => Math.round((n / total) * 100);
-  return `比率(存在): 植物${counts.plant}(${pct(counts.plant)}%) 草食${counts.herbivore}(${pct(counts.herbivore)}%) 雑食${counts.omnivore}(${pct(counts.omnivore)}%) 肉食${counts.carnivore}(${pct(counts.carnivore)}%) 肉${counts.meat}(${pct(counts.meat)}%)（n=${total}）`;
+  return `比率(実数): 植物${counts.plant}(${pct(counts.plant)}%) 草食${counts.herbivore}(${pct(counts.herbivore)}%) 雑食${counts.omnivore}(${pct(counts.omnivore)}%) 肉食${counts.carnivore}(${pct(counts.carnivore)}%) 肉${counts.meat}(${pct(counts.meat)}%) / 合計=${total}`;
 }
 
 function fmtBar(current, max) {
   const m = Math.max(1e-6, Number(max) || 0);
   const c = Math.max(0, Number(current) || 0);
   const pct = m > 0 ? Math.min(1, c / m) : 0;
-  return `${Math.round(c)}/${Math.round(m)}（${fmtPct(pct)}）`;
+  return `${Math.round(c)}/${Math.round(m)} (${fmtPct(pct)})`;
 }
 
 function pickMacroEntityAt(worldX, worldY) {
@@ -561,7 +619,7 @@ function computeGeneWeightsFromMacro() {
   const base = 1;
   const random = 0.1;
 
-  // At the very beginning (macro is empty), bias strongly toward stamina(□) so plants appear first.
+  // At the very beginning (macro is empty), bias strongly toward stamina(笆｡) so plants appear first.
   if (total <= 0) {
     return { stamina: 12, health: 3, attack: 1, random };
   }
@@ -587,7 +645,7 @@ function computeMicroDynamicsFromMacro() {
   const used = macroWorld.getAnimalHerdCount();
   const ratio = cap > 0 ? used / cap : 1;
   if (ratio < 0.3) return { tickRate: 60, mergeChance: 0.8, label: "高" };
-  if (ratio < 0.5) return { tickRate: 30, mergeChance: 0.5, label: "普" };
+  if (ratio < 0.5) return { tickRate: 30, mergeChance: 0.5, label: "普通" };
   return { tickRate: 15, mergeChance: 0.3, label: "低" };
 }
 
@@ -777,11 +835,21 @@ function loop(now) {
   for (let i = recents.length - 1; i >= 0; i--) {
     const r = recents[i];
     if (r.id <= lastReincarnationId) continue;
+    if (viewMode === "micro") bgmManager.playSfx("reincarnate", 0.9);
     if (!reincarnationLocked) macroWorld.addFromReincarnation(r);
     lastReincarnationId = r.id;
   }
 
   if (!paused) macroWorld.update(dt);
+
+  const macroWeatherKind = typeof macroWorld.getWeatherKind === "function" ? macroWorld.getWeatherKind() : "sunny";
+  const macroCalendar = typeof macroWorld.getCalendar === "function" ? macroWorld.getCalendar() : null;
+  bgmManager.sync({
+    viewMode,
+    seasonKind: macroCalendar?.seasonKind ?? null,
+    weatherKind: macroWeatherKind,
+  });
+  bgmManager.update(dt);
 
   const aliveAnimals = [];
   for (const e of macroWorld.entities) {
@@ -871,17 +939,17 @@ function loop(now) {
 
   if (weatherIndicator) {
     weatherIndicator.classList.toggle("hidden", viewMode !== "macro");
-    const kind = typeof macroWorld.getWeatherKind === "function" ? macroWorld.getWeatherKind() : "sunny";
+    const kind = macroWeatherKind;
     const mapping =
       kind === "rainy"
         ? { icon: "🌧️", text: "雨" }
         : kind === "snowy"
           ? { icon: "❄️", text: "雪" }
-        : kind === "cloudy"
-          ? { icon: "☁️", text: "曇り" }
-          : kind === "drought"
-            ? { icon: "🔥", text: "日照り" }
-          : { icon: "☀️", text: "晴れ" };
+          : kind === "cloudy"
+            ? { icon: "☁️", text: "曇り" }
+            : kind === "drought"
+              ? { icon: "🌞", text: "日照り" }
+              : { icon: "☀️", text: "晴れ" };
     if (weatherIcon) weatherIcon.textContent = mapping.icon;
     if (weatherText) weatherText.textContent = mapping.text;
   }
@@ -889,7 +957,7 @@ function loop(now) {
   if (calendarIndicator) {
     calendarIndicator.classList.toggle("hidden", viewMode !== "macro");
     if (viewMode === "macro") {
-      const cal = typeof macroWorld.getCalendar === "function" ? macroWorld.getCalendar() : null;
+      const cal = macroCalendar;
       const icon = cal?.seasonIcon ?? "🌸";
       const seasonLabel = cal?.seasonLabel ?? "-";
       const year = Number(cal?.year) || 1;
@@ -904,7 +972,7 @@ function loop(now) {
         const cy = macroCamera.y + vh / 2;
         const t =
           typeof macroWorld.getEnvironmentTempAtWorld === "function" ? macroWorld.getEnvironmentTempAtWorld(cx, cy) : NaN;
-        ambientTempText.textContent = Number.isFinite(Number(t)) ? `外気 ${Math.round(t)}℃` : "外気 -℃";
+        ambientTempText.textContent = Number.isFinite(Number(t)) ? `外気温 ${Math.round(t)}℃` : "外気温 -℃";
       }
     }
   }
@@ -915,9 +983,9 @@ function loop(now) {
           const recCount = macroWorld.getReincarnationGroupCount();
           const recCap = macroWorld.getAnimalCap();
           const stopped = reincarnationLocked || recCount >= recCap;
-          return `マクロ: ${macroWorld.entities.length}  転生: ${recCount}/${recCap}${stopped ? "（停止）" : ""}  |  （ミクロ更新頻度: ${world.getTickRate()}fps）`;
+          return `マクロ: ${macroWorld.entities.length}  転生: ${recCount}/${recCap}${stopped ? "（停止）" : ""}  |  ミクロ更新頻度: ${world.getTickRate()}fps`;
         })()
-      : `個体(画面): ${world.getEntityCount()} / 目標: ${world.getPopulationTarget()}  |  更新頻度: ${world.getTickRate()}fps  |  合体: ${Math.round(
+      : `個体数(画面): ${world.getEntityCount()} / 目標値: ${world.getPopulationTarget()}  |  更新頻度: ${world.getTickRate()}fps  |  合体率: ${Math.round(
           world.getMergeChance() * 100,
         )}%  |  転生個体数: ${world.getReincarnationIndividuals()}`;
   hudLine2.textContent =
@@ -926,7 +994,7 @@ function loop(now) {
       : paused
         ? "状態: 一時停止（設定メニュー表示中）"
         : microFrozenByMacroCap
-          ? "状態: マクロ転生が停止中のため停止（マクロ生物が全滅すると再開）"
+          ? "状態: マクロ転生が停止中のため停止中（マクロ生物が全滅すると再開）"
           : "状態: 実行中";
 
   const logLines = world.getRecentReincarnations(6).map((r) => r.summary);
@@ -956,8 +1024,10 @@ function loop(now) {
         inspectContent.textContent = "生物にマウスを合わせてください";
       } else {
         const kind = macroKindLabel(selected.kind);
-        const diet = dietTypeLabel(selected.dietType);
+        const selectedDiet = dietTypeForEntity(selected);
+        const diet = dietTypeLabel(selectedDiet);
         const sex = sexLabel(selected.sex);
+        const bodySize = bodySizeLabel(selected);
         const stage = selected.kind === "plant" ? plantStageLabel(selected.plantStage) : lifeStageLabel(selected.lifeStage);
         const generation = (() => {
           const g = Number(selected.generation);
@@ -1009,7 +1079,7 @@ function loop(now) {
           }
         }
 
-        const lines = [`種別: ${diet}`];
+        const lines = [`種別: ${kind}`, `食性: ${diet}`];
         const groupColor =
           typeof macroWorld.getGroupColorNameJa === "function"
             ? macroWorld.getGroupColorNameJa(selected.groupId)
@@ -1020,31 +1090,13 @@ function loop(now) {
         if (selected.kind !== "plant" && selected.kind !== "meat" && selected.kind !== "egg" && selected.kind !== "nest") {
           lines.push(`食事回数: 植物:${plantEaten} / 肉:${meatEaten}`);
           lines.push(`社会性: ${socialMode}`);
-          lines.push(`出産数: ${offspringText}`);
+          lines.push(`1回の出産数: ${litterRangeLabel(selectedDiet)}`);
+          lines.push(`生まれた子(累計): ${offspringText}`);
           lines.push(`交配数: ${reproText}`);
-          lines.push(`妊娠: ${selected.pregnant ? "YES" : "NO"}`);
-          /* const learningText = (() => {
-            const clamp01 = (v) => Math.max(0, Math.min(1, Number(v) || 0));
-            const pct = (v) => Math.round(clamp01(v) * 100);
-            const horn = clamp01(selected.hornDev);
-            const tail = clamp01(selected.tailDev);
-            const wing = clamp01(selected.wingDev);
-
-            const list = [
-              { label: "攻撃", v: horn },
-              { label: "移動", v: tail },
-              { label: "探索", v: wing },
-            ].sort((a, b) => b.v - a.v);
-
-            const sum = horn + tail + wing;
-            const top = list[0];
-            const second = list[1];
-            const spec = sum < 0.06 ? "未学習" : top.v >= 0.6 && top.v - second.v >= 0.12 ? `${top.label}特化` : "バランス";
-            return `${spec} (攻:${pct(horn)}% 移:${pct(tail)}% 探:${pct(wing)}%)`;
-          })();
-          lines.push(`学習: ${learningText}`); */
+          lines.push(`妊娠: ${selected.pregnant ? "あり" : "なし"}`);
         }
         lines.push(`性別: ${sex}`);
+        lines.push(`体型: ${bodySize}`);
         lines.push(`ステージ: ${stage}`);
         lines.push(`世代: ${generation}`);
         lines.push(`行動: ${action}`);
@@ -1058,7 +1110,6 @@ function loop(now) {
       }
     }
   }
-
   stepNnViz(now);
   pointer.moved = false;
   requestAnimationFrame(loop);
